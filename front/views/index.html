@@ -1,0 +1,93 @@
+<html>
+    <head>
+        {{> head}}
+        <style>
+            .modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+            }
+
+            .modal-content {
+                background-color: white;
+                margin: 15% auto;
+                padding: 20px;
+                width: 70%;
+                max-width: 500px;
+                border-radius: 5px;
+                position: relative;
+            }
+
+            .close {
+                position: absolute;
+                right: 10px;
+                top: 5px;
+                font-size: 24px;
+                cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>Game code</h2>
+        <input type="text" id="codeInput" />
+        <button id="createGame">Create game</button>
+        <button id="joinGame">Join game</button>
+        <button id="instructions">Instructions</button>
+        <div style="color: red" id="errorMessage"></div>
+
+        <!-- Instructions Modal -->
+        <div id="instructionsModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h3>Play instructions</h3>
+                <p><strong>To Create a Game:</strong></p>
+                <ol>
+                    <li>Enter a name in the input field</li>
+                    <li>Click "Create game" button</li>
+                    <li>Share the code with your opponent</li>
+                </ol>
+                <p><strong>To Jo4in a Game:</strong></p>
+                <ol>
+                    <li>
+                        Enter the game code provided by the creator of the match
+                    </li>
+                    <li>Click "Join game" button</li>
+                </ol>
+            </div>
+        </div>
+
+        <script>
+            $("#createGame").on("click", function () {
+                window.location.replace("/white?code=" + $("#codeInput").val());
+            });
+            $("#joinGame").on("click", function () {
+                window.location.replace("/black?code=" + $("#codeInput").val());
+            });
+
+            var urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get("error") == "invalidCode") {
+                $("#errorMessage").text("Invalid invite code");
+            }
+
+            // Instructions modal functionality
+            $("#instructions").on("click", function () {
+                $("#instructionsModal").css("display", "block");
+            });
+
+            $(".close").on("click", function () {
+                $("#instructionsModal").css("display", "none");
+            });
+
+            // Close modal when clicking outside of it
+            $(window).on("click", function (event) {
+                if ($(event.target).is("#instructionsModal")) {
+                    $("#instructionsModal").css("display", "none");
+                }
+            });
+        </script>
+    </body>
+</html>
