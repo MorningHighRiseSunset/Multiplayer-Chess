@@ -21,9 +21,21 @@ app.get('/lobby', (req, res) => res.sendFile(path.join(__dirname, 'lobby.html'))
 app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'room.html')));
 app.get('/game', (req, res) => res.sendFile(path.join(__dirname, 'game.html')));
 
+const initialBoard = [
+  ["bR","bN","bB","bQ","bK","bB","bN","bR"],
+  ["bP","bP","bP","bP","bP","bP","bP","bP"],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  ["wP","wP","wP","wP","wP","wP","wP","wP"],
+  ["wR","wN","wB","wQ","wK","wB","wN","wR"]
+];
+
 const rooms = {}; // { roomCode: [socketId, ...] }
 const playerInfo = {}; // { roomCode: { socketId: { color, ready } } }
 const roomDeleteTimeouts = {}; // { roomCode: timeoutId }
+const games = {}; // { roomCode: gameState }
 
 function broadcastRoomPlayers(roomCode) {
     const sockets = rooms[roomCode] || [];
@@ -36,6 +48,127 @@ function clearRoomDeleteTimeout(roomCode) {
         delete roomDeleteTimeouts[roomCode];
     }
 }
+
+// --- Minimal Chess Logic for Move Validation (same as in game.js, can be expanded) ---
+function getColor(piece) { return piece ? piece[0] : null; }
+function getType(piece) { return piece ? piece[1] : null; }
+function cloneBoard(b) { return b.map(row => row.slice()); }
+function isOwnPiece(piece, color) { return piece && getColor(piece) === color; }
+function isOpponentPiece(piece, color) { return piece && getColor(piece) !== color; }
+function isLegalMove(fromR, fromC, toR, toC, b, turn) {
+    const piece = b[fromR][fromC];
+    if (!piece) return false;
+    const color = getColor(piece);
+    const type = getType(piece);
+    const dr = toR - fromR, dc = toC - fromC;
+    const dest = b[toR][toC];
+
+    if (isOwnPiece(dest, color)) return false;
+
+    // PAWN
+    if (type === "P") {
+        let dir = (color === "w") ? -1 : 1;
+        let startRow = (color === "w") ? 6 : 1;
+        // Forward move
+        if (dc === 0 && dr === dir && !dest) return true;
+        // Double move
+        if (dc === 0 && dr === 2*dir && fromR === startRow && !dest && !b[fromR+dir][fromC]) return true;
+        // Capture
+        if (Math.abs(dc) === 1 && dr === dir && dest && getColor(dest) !== color) return true;
+        // TODO: En passant
+        return false;
+    }
+    // KNIGHT
+    if (type === "N") {
+        if ((Math.abs(dr) === 2 && Math.abs(dc) === 1) || (Math.abs(dr) === 1 && Math.abs(dc) === 2)) return !isOwnPiece(dest, color);
+        return false;
+    }
+    // BISHOP
+    if (type === "B") {
+        if (Math.abs(dr) !== Math.abs(dc)) return false;
+        let stepR = dr > 0 ? 1 : -1, stepC = dc > 0 ? 1 : -1;
+        for (let i = 1; i < Math.abs(dr); i++) {
+            if (b[fromR + i*stepR][fromC + i*stepC]) return false;
+        }
+        return !isOwnPiece(dest, color);
+    }
+    // ROOK
+    if (type === "R") {
+        if (dr !== 0 && dc !== 0) return false;
+        let stepR = dr === 0 ? 0 : (dr > 0 ? 1 : -1);
+        let stepC = dc === 0 ? 0 : (dc > 0 ? 1 : -1);
+        let steps = Math.max(Math.abs(dr), Math.abs(dc));
+        for (let i = 1; i < steps; i++) {
+            if (b[fromR + i*stepR][fromC + i*stepC]) return false;
+        }
+        return !isOwnPiece(dest, color);
+    }
+    // QUEEN
+    if (type === "Q") {
+        if (Math.abs(dr) === Math.abs(dc)) {
+            let stepR = dr > 0 ? 1 : -1, stepC = dc > 0 ? 1 : -1;
+            for (let i = 1; i < Math.abs(dr); i++) {
+                if (b[fromR + i*stepR][fromC + i*stepC]) return false;
+            }
+            return !isOwnPiece(dest, color);
+        }
+        if (dr === 0 || dc === 0) {
+            let stepR = dr === 0 ? 0 : (dr > 0 ? 1 : -1);
+            let stepC = dc === 0 ? 0 : (dc > 0 ? 1 : -1);
+            let steps = Math.max(Math.abs(dr), Math.abs(dc));
+            for (let i = 1; i < steps; i++) {
+                if (b[fromR + i*stepR][fromC + i*stepC]) return false;
+            }
+            return !isOwnPiece(dest, color);
+        }
+        return false;
+    }
+    // KING
+    if (type === "K") {
+        if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) return !isOwnPiece(dest, color);
+        // TODO: Castling
+        return false;
+    }
+    return false;
+}
+
+function findKing(b, color) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        if (b[r][c] === color + "K") return [r, c];
+    }
+    return null;
+}
+
+function isInCheck(b, color) {
+    const [kr, kc] = findKing(b, color) || [];
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const piece = b[r][c];
+        if (piece && getColor(piece) !== color) {
+            if (isLegalMove(r, c, kr, kc, b, getColor(piece))) return true;
+        }
+    }
+    return false;
+}
+
+function hasLegalMoves(b, color) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const piece = b[r][c];
+        if (piece && getColor(piece) === color) {
+            for (let dr = 0; dr < 8; dr++) for (let dc = 0; dc < 8; dc++) {
+                if ((r !== dr || c !== dc) && isLegalMove(r, c, dr, dc, b, color)) {
+                    // Try move and see if king is not in check
+                    let b2 = cloneBoard(b);
+                    b2[dr][dc] = b2[r][c];
+                    b2[r][c] = null;
+                    if (!isInCheck(b2, color)) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// --- End Chess Logic ---
 
 io.on('connection', (socket) => {
     console.log('[server.js] New connection:', socket.id);
@@ -50,6 +183,17 @@ io.on('connection', (socket) => {
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
         playerInfo[roomCode][socket.id] = { color: null, ready: false };
+        // Initialize game state
+        games[roomCode] = {
+            board: JSON.parse(JSON.stringify(initialBoard)),
+            turn: 'w',
+            castling: { wK: true, wQ: true, bK: true, bQ: true },
+            enPassant: null,
+            halfmoveClock: 0,
+            moveNumber: 1,
+            history: [],
+            status: null
+        };
         if (typeof callback === "function") {
             callback({ roomCode });
         }
@@ -59,7 +203,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('joinRoom', (roomCode, callback) => {
-        console.log('[joinRoom] Attempt:', roomCode, 'Current rooms:', Object.keys(rooms));
         if (!roomCode) {
             if (typeof callback === "function") {
                 callback({ error: 'No room code provided.' });
@@ -68,21 +211,17 @@ io.on('connection', (socket) => {
         }
         roomCode = roomCode.toUpperCase();
         if (!rooms[roomCode]) {
-            console.log('[joinRoom] Room not found:', roomCode);
             if (typeof callback === "function") {
                 callback({ error: 'Room not found.' });
             }
             return;
         }
         if (rooms[roomCode].length >= 2) {
-            console.log('[joinRoom] Room full:', roomCode);
             if (typeof callback === "function") {
                 callback({ error: 'Room is full.' });
             }
             return;
         }
-
-        // State transfer: If there is a player slot with color/ready but no active socket, transfer it to this socket
         let transferred = false;
         if (playerInfo[roomCode]) {
             for (const [oldSocketId, info] of Object.entries(playerInfo[roomCode])) {
@@ -90,7 +229,6 @@ io.on('connection', (socket) => {
                     playerInfo[roomCode][socket.id] = { ...info };
                     delete playerInfo[roomCode][oldSocketId];
                     transferred = true;
-                    console.log(`[joinRoom] Transferred state from ${oldSocketId} to ${socket.id} in room ${roomCode}`);
                     break;
                 }
             }
@@ -99,7 +237,6 @@ io.on('connection', (socket) => {
             if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
             if (!playerInfo[roomCode][socket.id]) playerInfo[roomCode][socket.id] = { color: null, ready: false };
         }
-
         rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
@@ -109,8 +246,10 @@ io.on('connection', (socket) => {
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
 
-        // Do NOT start the game here! Wait for both players to be ready.
-        console.log(`[joinRoom] ${socket.id} joined room: ${roomCode}`);
+        // Send current game state to the joining player
+        if (games[roomCode]) {
+            socket.emit('move', games[roomCode]);
+        }
     });
 
     socket.on('pickColor', ({ room, color }) => {
@@ -120,7 +259,6 @@ io.on('connection', (socket) => {
         playerInfo[room][socket.id].ready = false;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
-        console.log(`[pickColor] ${socket.id} picked ${color} in room ${room}`);
     });
 
     socket.on('playerReady', ({ room, color }) => {
@@ -129,7 +267,6 @@ io.on('connection', (socket) => {
         playerInfo[room][socket.id].ready = true;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
-        console.log(`[playerReady] ${socket.id} is ready as ${color} in room ${room}`);
 
         // --- Only start game if both players are ready ---
         const readyPlayers = Object.values(playerInfo[room]).filter(p => p.ready);
@@ -157,7 +294,6 @@ io.on('connection', (socket) => {
                 roles[sockets[1]] = 'Player 2';
             }
             io.to(room).emit('startGame', { colorAssignments, firstTurn, roles });
-            console.log(`[playerReady] startGame sent for room: ${room}`, colorAssignments, roles);
         }
     });
 
@@ -165,17 +301,15 @@ io.on('connection', (socket) => {
         if (rooms[room]) {
             rooms[room] = rooms[room].filter(id => id !== socket.id);
             if (rooms[room].length === 0) {
-                // Start grace period for deletion
                 roomDeleteTimeouts[room] = setTimeout(() => {
                     delete rooms[room];
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
-                    console.log(`[leaveRoom] Room deleted (timeout): ${room}`);
-                }, 10000); // 10 seconds
+                    delete games[room];
+                }, 10000);
             } else {
                 if (playerInfo[room]) delete playerInfo[room][socket.id];
                 broadcastRoomPlayers(room);
-                console.log(`[leaveRoom] ${socket.id} left room: ${room}`);
             }
         }
         socket.leave(room);
@@ -185,28 +319,58 @@ io.on('connection', (socket) => {
         broadcastRoomPlayers(room);
     });
 
-    socket.on('move', (data) => {
-        socket.to(socket.roomCode).emit('move', data);
+    socket.on('move', ({ move, roomCode }) => {
+        const game = games[roomCode];
+        if (!game || game.status) return; // Game not found or already over
+
+        const board = game.board;
+        const turn = game.turn;
+        const color = turn;
+        const [fromR, fromC] = move.from;
+        const [toR, toC] = move.to;
+        const piece = board[fromR][fromC];
+
+        // Validate move
+        if (!piece || getColor(piece) !== color) return;
+        if (!isLegalMove(fromR, fromC, toR, toC, board, color)) return;
+
+        // Simulate move and check for self-check
+        let b2 = cloneBoard(board);
+        b2[toR][toC] = b2[fromR][fromC];
+        b2[fromR][fromC] = null;
+        if (isInCheck(b2, color)) return;
+
+        // Move is legal, update game state
+        game.board = b2;
+        game.turn = (turn === 'w' ? 'b' : 'w');
+        game.history.push({ from: move.from, to: move.to, piece, captured: board[toR][toC] });
+
+        // Check for checkmate/stalemate
+        const oppColor = game.turn;
+        if (isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor)) {
+            game.status = "checkmate";
+        } else if (!isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor)) {
+            game.status = "stalemate";
+        }
+
+        io.to(roomCode).emit('move', game);
     });
 
     socket.on('disconnect', () => {
-        console.log('[server.js] Socket disconnected:', socket.id, 'Room:', socket.roomCode);
         const roomCode = socket.roomCode;
         if (roomCode && rooms[roomCode]) {
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
             if (rooms[roomCode].length === 0) {
-                // Start grace period for deletion
                 roomDeleteTimeouts[roomCode] = setTimeout(() => {
                     delete rooms[roomCode];
                     delete playerInfo[roomCode];
                     delete roomDeleteTimeouts[roomCode];
-                    console.log(`[disconnect] Room deleted (timeout): ${roomCode}`);
-                }, 10000); // 10 seconds
+                    delete games[roomCode];
+                }, 10000);
             } else {
                 if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
                 broadcastRoomPlayers(roomCode);
                 io.to(roomCode).emit('opponentLeft');
-                console.log(`[disconnect] ${socket.id} left room: ${roomCode}`);
             }
         }
     });

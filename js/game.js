@@ -1,25 +1,55 @@
-const socket = io('https://multiplayer-chess-exdx.onrender.com');
+const socket = io('https://your-render-backend-url.onrender.com'); // <-- use your Render backend URL
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');
 const myColor = urlParams.get('color') || 'white';
+
+const initialBoard = [
+  ["bR","bN","bB","bQ","bK","bB","bN","bR"],
+  ["bP","bP","bP","bP","bP","bP","bP","bP"],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null],
+  ["wP","wP","wP","wP","wP","wP","wP","wP"],
+  ["wR","wN","wB","wQ","wK","wB","wN","wR"]
+];
 
 const pieceUnicode = {
   wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
   bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟"
 };
 
-const boardElem = document.getElementById('chess3d');
-const statusElem = document.getElementById('game-status');
-const chess = new Chess();
+let gameState = {
+  board: JSON.parse(JSON.stringify(initialBoard)),
+  turn: 'w',
+  castling: { wK: true, wQ: true, bK: true, bQ: true },
+  enPassant: null,
+  halfmoveClock: 0,
+  moveNumber: 1,
+  history: []
+};
 
 let selected = null;
-let myTurn = (myColor === 'white'); // White always starts
+let myTurn = (myColor === 'white');
 let lastMove = null;
+let gameOver = false;
+const boardElem = document.getElementById('chess3d');
+const statusElem = document.getElementById('game-status');
+
+function getColor(piece) { return piece ? piece[0] : null; }
+function getType(piece) { return piece ? piece[1] : null; }
+function isOwnPiece(piece) {
+  return piece && ((myColor === "white" && piece[0] === "w") || (myColor === "black" && piece[0] === "b"));
+}
+function isOpponentPiece(piece) { return piece && !isOwnPiece(piece); }
+function cloneBoard(b) { return b.map(row => row.slice()); }
+function algebraic(r, c) { return "abcdefgh"[c] + (8 - r); }
+function parseAlgebraic(sq) { return [8 - Number(sq[1]), "abcdefgh".indexOf(sq[0])]; }
 
 function renderBoard() {
+  const board = gameState.board;
   boardElem.innerHTML = "";
-  let displayBoard = chess.board();
-  if (myColor === "black") displayBoard = [...displayBoard].reverse().map(r=>[...r].reverse());
+  let displayBoard = myColor === "white" ? board : [...board].reverse().map(r=>[...r].reverse());
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const sq = document.createElement('div');
@@ -30,21 +60,12 @@ function renderBoard() {
       sq.dataset.r = boardR;
       sq.dataset.c = boardC;
       if (piece) {
-        const key = piece.color + piece.type.toUpperCase();
-        sq.textContent = pieceUnicode[key] || "";
-        sq.style.color = piece.color === "b" ? "#222" : "#fff";
+        sq.textContent = pieceUnicode[piece] || "";
+        sq.style.color = piece[0] === "b" ? "#222" : "#fff";
       }
-      // Highlight selected
       if (selected && selected[0] == boardR && selected[1] == boardC) {
         sq.style.outline = "3px solid #ffe082";
         sq.style.zIndex = 2;
-      }
-      // Highlight last move
-      if (lastMove && (
-        (lastMove.from[0] == boardR && lastMove.from[1] == boardC) ||
-        (lastMove.to[0] == boardR && lastMove.to[1] == boardC)
-      )) {
-        sq.style.background = "#ffe082";
       }
       sq.onclick = () => handleSquareClick(Number(sq.dataset.r), Number(sq.dataset.c));
       boardElem.appendChild(sq);
@@ -53,59 +74,55 @@ function renderBoard() {
 }
 
 function handleSquareClick(r, c) {
-  if (!myTurn || chess.game_over()) return;
-  const square = "abcdefgh"[c] + (8 - r);
-  const piece = chess.get(square);
-
-  // If nothing selected yet
+  if (!myTurn || gameOver) return;
+  const board = gameState.board;
+  const piece = board[r][c];
   if (!selected) {
-    // Only allow selecting your own piece
-    if (piece && ((myColor === "white" && piece.color === "w") || (myColor === "black" && piece.color === "b"))) {
+    if (piece && ((myColor === "white" && piece[0] === "w") || (myColor === "black" && piece[0] === "b"))) {
       selected = [r, c];
       renderBoard();
     }
     return;
   }
-
-  // If selecting another of your own pieces, change selection
-  if (piece && ((myColor === "white" && piece.color === "w") || (myColor === "black" && piece.color === "b"))) {
-    selected = [r, c];
+  const [fromR, fromC] = selected;
+  if (fromR === r && fromC === c) {
+    selected = null;
     renderBoard();
     return;
   }
-
-  // Try to move from selected to this square
-  const fromSquare = "abcdefgh"[selected[1]] + (8 - selected[0]);
-  const move = chess.move({ from: fromSquare, to: square, promotion: "q" });
-  if (move) {
-    lastMove = {
-      from: [selected[0], selected[1]],
-      to: [r, c]
-    };
-    myTurn = false;
-    statusElem.textContent = "Opponent's turn";
-    renderBoard();
-    socket.emit('move', { from: fromSquare, to: square, roomCode });
-    selected = null;
-    checkGameOver();
-  } else {
-    // Invalid move, clear selection
-    selected = null;
-    renderBoard();
+  // Validate move (expand this for castling, en passant, promotion)
+  const move = {
+    from: [fromR, fromC],
+    to: [r, c],
+    promotion: null // set to 'Q', 'R', 'B', 'N' if pawn promotion
+  };
+  // Pawn promotion UI
+  if (getType(board[fromR][fromC]) === "P" && (r === 0 || r === 7)) {
+    move.promotion = prompt("Promote to (Q, R, B, N):", "Q") || "Q";
   }
+  // Send move to server for validation and update
+  socket.emit('move', { move, roomCode });
+  selected = null;
+}
+
+function updateFromServer(newState) {
+  gameState = newState;
+  myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
+  renderBoard();
+  checkGameOver();
+  if (!gameOver) statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
 }
 
 function checkGameOver() {
-  if (chess.in_checkmate()) {
+  if (gameState.status === "checkmate") {
     statusElem.textContent = "Checkmate! " + (myTurn ? "You lose." : "You win!");
-  } else if (chess.in_stalemate()) {
+    gameOver = true;
+  } else if (gameState.status === "stalemate") {
     statusElem.textContent = "Stalemate!";
-  } else if (chess.in_draw()) {
+    gameOver = true;
+  } else if (gameState.status === "draw") {
     statusElem.textContent = "Draw!";
-  } else if (chess.in_threefold_repetition()) {
-    statusElem.textContent = "Draw by repetition!";
-  } else if (chess.insufficient_material()) {
-    statusElem.textContent = "Draw by insufficient material!";
+    gameOver = true;
   }
 }
 
@@ -118,25 +135,13 @@ socket.on('connect', () => {
   });
 });
 
-socket.on('move', data => {
-  const { from, to } = data;
-  const move = chess.move({ from, to, promotion: "q" });
-  if (move) {
-    // Convert algebraic to [row, col]
-    const fromC = "abcdefgh".indexOf(from[0]);
-    const fromR = 8 - Number(from[1]);
-    const toC = "abcdefgh".indexOf(to[0]);
-    const toR = 8 - Number(to[1]);
-    lastMove = { from: [fromR, fromC], to: [toR, toC] };
-    myTurn = true;
-    statusElem.textContent = "Your turn";
-    renderBoard();
-    checkGameOver();
-  }
+socket.on('move', (newState) => {
+  updateFromServer(newState);
 });
 
 socket.on('opponentLeft', () => {
   statusElem.textContent = "Opponent left the game.";
+  gameOver = true;
 });
 
 renderBoard();
