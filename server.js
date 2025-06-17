@@ -84,7 +84,7 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        playerInfo[roomCode][socket.id] = { color: null, ready: false };
+        if (!playerInfo[roomCode][socket.id]) playerInfo[roomCode][socket.id] = { color: null, ready: false };
         if (typeof callback === "function") {
             callback({ roomCode });
         }
@@ -95,6 +95,7 @@ io.on('connection', (socket) => {
 
     socket.on('pickColor', ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
+        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false };
         playerInfo[room][socket.id].color = color;
         playerInfo[room][socket.id].ready = false;
         broadcastRoomPlayers(room);
@@ -103,6 +104,7 @@ io.on('connection', (socket) => {
 
     socket.on('playerReady', ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
+        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false };
         playerInfo[room][socket.id].ready = true;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
@@ -115,7 +117,7 @@ io.on('connection', (socket) => {
                 delete rooms[room];
                 delete playerInfo[room];
             } else {
-                delete playerInfo[room][socket.id];
+                if (playerInfo[room]) delete playerInfo[room][socket.id];
                 broadcastRoomPlayers(room);
             }
         }
