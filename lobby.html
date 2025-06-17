@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chess Lobby</title>
+    <link rel="stylesheet" href="css/lobby.css">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="floating-bg" aria-hidden="true"></div>
+    <div class="lobby-container">
+        <div class="floating-chess">
+            <div class="tile"><span class="piece">♔</span></div>
+            <div class="tile"><span class="piece">♞</span></div>
+            <div class="tile"><span class="piece">♟</span></div>
+        </div>
+        <div class="lobby-actions">
+            <button class="lobby-btn" id="create-room">Create Room</button>
+            <form id="join-form" autocomplete="off">
+                <input type="text" id="join-room-code" maxlength="8" placeholder="Enter code to join" autocomplete="off">
+                <button class="lobby-btn" type="submit">Join Game</button>
+            </form>
+            <div id="lobby-status" style="margin-top:10px;color:#e53935;"></div>
+        </div>
+        <div class="lobby-stats">
+            <div class="stat-box">
+                <div class="stat-title">Most Wins</div>
+                <div class="stat-value">W.I.P</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-title">Highest Streak</div>
+                <div class="stat-value">W.I.P</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const socket = io();
+        document.getElementById('create-room').onclick = () => {
+            socket.emit('createRoom', (res) => {
+                if (res.roomCode) {
+                    window.location.href = `room.html?room=${res.roomCode}`;
+                } else {
+                    document.getElementById('lobby-status').textContent = "Failed to create room.";
+                }
+            });
+        };
+        document.getElementById('join-form').onsubmit = (e) => {
+            e.preventDefault();
+            const code = document.getElementById('join-room-code').value.trim().toUpperCase();
+            if (code.length === 6) {
+                window.location.href = `room.html?room=${code}`;
+            } else {
+                document.getElementById('lobby-status').textContent = "Enter a valid 6-letter code.";
+            }
+        };
+    </script>
+    <script src="js/lobby.js"></script>
+</body>
+</html>

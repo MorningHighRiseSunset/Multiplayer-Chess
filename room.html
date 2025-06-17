@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chess Room Lobby</title>
+  <link rel="stylesheet" href="css/room.css">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <div class="floating-bg" aria-hidden="true"></div>
+  <div class="room-container">
+    <div class="room-card">
+      <div class="room-header">
+        <span class="room-title">Chess Room</span>
+        <span class="room-code" id="room-code"></span>
+        <button id="copy-code-btn" title="Copy Room Code" style="margin-left:8px;">Copy</button>
+      </div>
+      <div class="players-section">
+        <div class="player-card" id="player-white">
+          <div class="avatar white"><span class="piece">♔</span></div>
+          <div class="player-info">
+            <span class="player-name" id="white-name">White</span>
+            <span class="player-status" id="white-status">Waiting...</span>
+          </div>
+        </div>
+        <div class="vs-divider">vs</div>
+        <div class="player-card" id="player-black">
+          <div class="avatar black"><span class="piece">♚</span></div>
+          <div class="player-info">
+            <span class="player-name" id="black-name">Black</span>
+            <span class="player-status" id="black-status">Waiting...</span>
+          </div>
+        </div>
+      </div>
+      <div class="actions-section">
+        <button class="color-btn" data-color="white" id="pick-white">Play White</button>
+        <button class="color-btn" data-color="black" id="pick-black">Play Black</button>
+      </div>
+      <div class="ready-section">
+        <button id="ready-btn" disabled>Ready</button>
+        <button id="leave-btn" class="secondary">Leave</button>
+      </div>
+      <div class="room-status" id="room-status"></div>
+    </div>
+    <div class="chat-card">
+      <div class="chat-header">Room Chat</div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <form class="chat-form" id="chat-form">
+        <input class="chat-input" id="chat-input" type="text" placeholder="Type a message..." maxlength="200" autocomplete="off" />
+        <button type="submit" class="chat-send">Send</button>
+      </form>
+    </div>
+  </div>
+  <script src="js/room.js"></script>
+  <script>
+    // Show room code and copy button logic
+    const params = new URLSearchParams(window.location.search);
+    const roomCode = params.get('room');
+    const roomCodeDiv = document.getElementById('room-code');
+    if (roomCodeDiv && roomCode) {
+      roomCodeDiv.textContent = roomCode;
+    }
+    const copyBtn = document.getElementById('copy-code-btn');
+    if (copyBtn && roomCodeDiv) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(roomCodeDiv.textContent);
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => copyBtn.textContent = "Copy", 1200);
+      };
+    }
+  </script>
+</body>
+</html>
