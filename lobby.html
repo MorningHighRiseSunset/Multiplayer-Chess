@@ -33,27 +33,7 @@
             </div>
         </div>
     </div>
-    <script>
-        const socket = io();
-        document.getElementById('create-room').onclick = () => {
-            socket.emit('createRoom', (res) => {
-                if (res.roomCode) {
-                    window.location.href = `room.html?room=${res.roomCode}`;
-                } else {
-                    document.getElementById('lobby-status').textContent = "Failed to create room.";
-                }
-            });
-        };
-        document.getElementById('join-form').onsubmit = (e) => {
-            e.preventDefault();
-            const code = document.getElementById('join-room-code').value.trim().toUpperCase();
-            if (code.length === 6) {
-                window.location.href = `room.html?room=${code}`;
-            } else {
-                document.getElementById('lobby-status').textContent = "Enter a valid 6-letter code.";
-            }
-        };
-    </script>
+    <!-- REMOVE the inline <script> block here -->
     <script src="js/lobby.js"></script>
 </body>
 </html>
