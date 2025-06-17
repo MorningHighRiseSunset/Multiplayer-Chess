@@ -47,8 +47,9 @@ document.getElementById('create-room').addEventListener('click', () => {
 
 document.getElementById('join-form').addEventListener('submit', function(e) {
     e.preventDefault();
-    const code = document.getElementById('join-room-code').value.trim();
+    let code = document.getElementById('join-room-code').value.trim();
     if (!code) return;
+    code = code.toUpperCase(); // Ensure uppercase
     socket.emit('joinRoom', code, (res) => {
         if (res.error) {
             alert(res.error);
