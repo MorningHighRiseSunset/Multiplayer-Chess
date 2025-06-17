@@ -38,10 +38,6 @@ let gameOver = false;
 const boardElem = document.getElementById('chess3d');
 const statusElem = document.getElementById('game-status');
 
-// --- Sound setup ---
-const moveSound = new Audio('https://cdn.jsdelivr.net/gh/lloydroc/chess-sounds@main/move-self.mp3');
-const captureSound = new Audio('https://cdn.jsdelivr.net/gh/lloydroc/chess-sounds@main/capture.mp3');
-
 function getColor(piece) { return piece ? piece[0] : null; }
 function getType(piece) { return piece ? piece[1] : null; }
 function isOwnPiece(piece) {
@@ -223,15 +219,6 @@ function handleSquareClick(r, c) {
 }
 
 function updateFromServer(newState) {
-  // Play sound if move/capture
-  if (gameState.history && newState.history && newState.history.length > gameState.history.length) {
-    const last = newState.history[newState.history.length - 1];
-    if (last.captured) {
-      captureSound.currentTime = 0; captureSound.play();
-    } else {
-      moveSound.currentTime = 0; moveSound.play();
-    }
-  }
   gameState = newState;
   myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
   selected = null;
@@ -285,14 +272,13 @@ if (chatForm && chatInput && chatMessages) {
     e.preventDefault();
     const msg = chatInput.value.trim();
     if (msg) {
-      appendChatMessage("You", msg);
       socket.emit('chatMessage', { room: roomCode, msg });
       chatInput.value = '';
     }
   });
 
-  socket.on('chatMessage', ({ sender, msg }) => {
-    appendChatMessage(sender, msg);
+  socket.on('chatMessage', ({ sender, msg, self }) => {
+    appendChatMessage(sender === socket.id ? "You" : sender, msg);
   });
 
   function appendChatMessage(sender, msg) {

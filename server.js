@@ -374,8 +374,8 @@ io.on('connection', (socket) => {
     });
 
     // --- CHAT HANDLER ---
-    socket.on('chatMessage', ({ room, msg }) => {
-        io.to(room).emit('chatMessage', { sender: socket.id.slice(0, 6), msg });
+    socket.on('chatMessage', ({ sender, msg, self }) => {
+    appendChatMessage(sender === socket.id ? "You" : sender, msg);
     });
 
     socket.on('disconnect', () => {
