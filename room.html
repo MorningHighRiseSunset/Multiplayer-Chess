@@ -52,22 +52,5 @@
     </div>
   </div>
   <script src="js/room.js"></script>
-  <script>
-    // Show room code and copy button logic
-    const params = new URLSearchParams(window.location.search);
-    const roomCode = params.get('room');
-    const roomCodeDiv = document.getElementById('room-code');
-    if (roomCodeDiv && roomCode) {
-      roomCodeDiv.textContent = roomCode;
-    }
-    const copyBtn = document.getElementById('copy-code-btn');
-    if (copyBtn && roomCodeDiv) {
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(roomCodeDiv.textContent);
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => copyBtn.textContent = "Copy", 1200);
-      };
-    }
-  </script>
 </body>
 </html>
