@@ -34,13 +34,15 @@ for (let i = 0; i < TILE_COUNT; i++) {
     bg.appendChild(el);
 }
 
-document.getElementById('create-room').addEventListener('click', () => {
-    window.location.href = 'room.html';
-});
-
 // Lobby socket logic
 if (typeof io !== "undefined") {
     const socket = io('https://multiplayer-chess-exdx.onrender.com');
+
+    document.getElementById('create-room').addEventListener('click', () => {
+        socket.emit('createRoom', ({ roomCode }) => {
+            window.location.href = `room.html?room=${roomCode}`;
+        });
+    });
 
     document.getElementById('join-form').addEventListener('submit', function(e) {
         e.preventDefault();

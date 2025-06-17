@@ -19,12 +19,12 @@ const PORT = process.env.PORT || 3000;
 // Serve static files
 app.use(express.static(__dirname));
 
-// Show a plain message at root ("/") like your checkers server
+// Show a plain message at root ("/") if you want, or serve lobby.html
 app.get('/', (req, res) => {
     res.send('Chess multiplayer server is running!');
 });
 
-// Serve lobby and room HTML for direct navigation
+// Serve lobby, room, and game HTML for direct navigation
 app.get('/lobby', (req, res) => {
     res.sendFile(path.join(__dirname, 'lobby.html'));
 });
@@ -46,27 +46,37 @@ io.on('connection', (socket) => {
         rooms[roomCode] = [socket.id];
         socket.join(roomCode);
         socket.roomCode = roomCode;
-        callback({ roomCode });
+        if (typeof callback === "function") {
+            callback({ roomCode });
+        }
     });
 
     socket.on('joinRoom', (roomCode, callback) => {
         if (!roomCode) {
-            callback({ error: 'No room code provided.' });
+            if (typeof callback === "function") {
+                callback({ error: 'No room code provided.' });
+            }
             return;
         }
         roomCode = roomCode.toUpperCase();
         if (!rooms[roomCode]) {
-            callback({ error: 'Room not found.' });
+            if (typeof callback === "function") {
+                callback({ error: 'Room not found.' });
+            }
             return;
         }
         if (rooms[roomCode].length >= 2) {
-            callback({ error: 'Room is full.' });
+            if (typeof callback === "function") {
+                callback({ error: 'Room is full.' });
+            }
             return;
         }
         rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
-        callback({ roomCode });
+        if (typeof callback === "function") {
+            callback({ roomCode });
+        }
         // Notify both players that the game can start
         io.to(roomCode).emit('startGame', { roomCode });
     });
