@@ -41,6 +41,13 @@ console.log('[room.js] Loaded room page with code:', roomCode);
 
 const socket = io('https://multiplayer-chess-exdx.onrender.com');
 
+// Clear previous color pick if entering a new room
+const lastRoom = sessionStorage.getItem('lastRoomCode');
+if (lastRoom !== roomCode) {
+  sessionStorage.removeItem('myColorPick');
+  sessionStorage.setItem('lastRoomCode', roomCode);
+}
+
 let myColorPick = null;
 let myAssignedColor = null;
 let myRole = null;
@@ -115,7 +122,7 @@ socket.emit('joinRoom', roomCode, (res) => {
 socket.on('connect', () => {
   mySocketId = socket.id;
   console.log('[room.js] Socket connected:', socket.id);
-  // Restore color pick if needed
+  // Restore color pick if needed (only if in this room)
   const storedColor = sessionStorage.getItem('myColorPick');
   if (storedColor && !myColorPick) {
     myColorPick = storedColor;
