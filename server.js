@@ -108,7 +108,36 @@ io.on('connection', (socket) => {
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        io.to(roomCode).emit('startGame', { roomCode });
+
+        // Assign colors and roles if there are 2 players
+        if (rooms[roomCode].length === 2) {
+            const sockets = rooms[roomCode];
+            const colorAssignments = {};
+            const roles = {};
+            let firstTurn = 'white';
+
+            // Assign based on color picks if available, else default
+            const info = playerInfo[roomCode];
+            let whiteSocket = null, blackSocket = null;
+            for (const sid of sockets) {
+                if (info[sid] && info[sid].color === 'white') whiteSocket = sid;
+                if (info[sid] && info[sid].color === 'black') blackSocket = sid;
+            }
+            // If both picked, assign accordingly, else assign by order
+            if (whiteSocket && blackSocket) {
+                colorAssignments[whiteSocket] = 'white';
+                colorAssignments[blackSocket] = 'black';
+                roles[whiteSocket] = 'Player 1';
+                roles[blackSocket] = 'Player 2';
+            } else {
+                colorAssignments[sockets[0]] = 'white';
+                colorAssignments[sockets[1]] = 'black';
+                roles[sockets[0]] = 'Player 1';
+                roles[sockets[1]] = 'Player 2';
+            }
+            io.to(roomCode).emit('startGame', { colorAssignments, firstTurn, roles });
+            console.log(`[joinRoom] startGame sent for room: ${roomCode}`, colorAssignments, roles);
+        }
         console.log(`[joinRoom] ${socket.id} joined room: ${roomCode}`);
     });
 
