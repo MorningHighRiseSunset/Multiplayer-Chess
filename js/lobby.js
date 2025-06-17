@@ -35,25 +35,25 @@ for (let i = 0; i < TILE_COUNT; i++) {
 }
 
 // Lobby socket logic
-if (typeof io !== "undefined") {
-    const socket = io('https://multiplayer-chess-exdx.onrender.com');
+const socket = io('https://multiplayer-chess-exdx.onrender.com', {
+    transports: ['websocket', 'polling']
+});
 
-    document.getElementById('create-room').addEventListener('click', () => {
-        socket.emit('createRoom', ({ roomCode }) => {
-            window.location.href = `room.html?room=${roomCode}`;
-        });
+document.getElementById('create-room').addEventListener('click', () => {
+    socket.emit('createRoom', ({ roomCode }) => {
+        window.location.href = `room.html?room=${roomCode}`;
     });
+});
 
-    document.getElementById('join-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const code = document.getElementById('room-code').value.trim();
-        if (!code) return;
-        socket.emit('joinRoom', code, (res) => {
-            if (res.error) {
-                alert(res.error);
-            } else {
-                window.location.href = `room.html?room=${res.roomCode}`;
-            }
-        });
+document.getElementById('join-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const code = document.getElementById('room-code').value.trim();
+    if (!code) return;
+    socket.emit('joinRoom', code, (res) => {
+        if (res.error) {
+            alert(res.error);
+        } else {
+            window.location.href = `room.html?room=${res.roomCode}`;
+        }
     });
-}
+});
