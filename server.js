@@ -58,9 +58,11 @@ io.on('connection', (socket) => {
             callback({ roomCode });
         }
         broadcastRoomPlayers(roomCode);
+        console.log(`[createRoom] Created room: ${roomCode} by ${socket.id}`);
     });
 
     socket.on('joinRoom', (roomCode, callback) => {
+        console.log('[joinRoom] Attempt:', roomCode, 'Current rooms:', Object.keys(rooms));
         if (!roomCode) {
             if (typeof callback === "function") {
                 callback({ error: 'No room code provided.' });
@@ -69,12 +71,14 @@ io.on('connection', (socket) => {
         }
         roomCode = roomCode.toUpperCase();
         if (!rooms[roomCode]) {
+            console.log('[joinRoom] Room not found:', roomCode);
             if (typeof callback === "function") {
                 callback({ error: 'Room not found.' });
             }
             return;
         }
         if (rooms[roomCode].length >= 2) {
+            console.log('[joinRoom] Room full:', roomCode);
             if (typeof callback === "function") {
                 callback({ error: 'Room is full.' });
             }
@@ -91,6 +95,7 @@ io.on('connection', (socket) => {
         broadcastRoomPlayers(roomCode);
         // Notify both players that the game can start
         io.to(roomCode).emit('startGame', { roomCode });
+        console.log(`[joinRoom] ${socket.id} joined room: ${roomCode}`);
     });
 
     socket.on('pickColor', ({ room, color }) => {
@@ -100,6 +105,7 @@ io.on('connection', (socket) => {
         playerInfo[room][socket.id].ready = false;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
+        console.log(`[pickColor] ${socket.id} picked ${color} in room ${room}`);
     });
 
     socket.on('playerReady', ({ room, color }) => {
@@ -108,6 +114,7 @@ io.on('connection', (socket) => {
         playerInfo[room][socket.id].ready = true;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
+        console.log(`[playerReady] ${socket.id} is ready as ${color} in room ${room}`);
     });
 
     socket.on('leaveRoom', ({ room }) => {
@@ -116,9 +123,11 @@ io.on('connection', (socket) => {
             if (rooms[room].length === 0) {
                 delete rooms[room];
                 delete playerInfo[room];
+                console.log(`[leaveRoom] Room deleted: ${room}`);
             } else {
                 if (playerInfo[room]) delete playerInfo[room][socket.id];
                 broadcastRoomPlayers(room);
+                console.log(`[leaveRoom] ${socket.id} left room: ${room}`);
             }
         }
         socket.leave(room);
@@ -140,10 +149,12 @@ io.on('connection', (socket) => {
             if (rooms[roomCode].length === 0) {
                 delete rooms[roomCode];
                 delete playerInfo[roomCode];
+                console.log(`[disconnect] Room deleted: ${roomCode}`);
             } else {
                 if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
                 broadcastRoomPlayers(roomCode);
                 io.to(roomCode).emit('opponentLeft');
+                console.log(`[disconnect] ${socket.id} left room: ${roomCode}`);
             }
         }
     });
