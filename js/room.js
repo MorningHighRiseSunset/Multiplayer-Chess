@@ -100,10 +100,10 @@ function updatePlayerStatus(playersObj) {
   playerBlackStatus.textContent = 'Waiting...';
   Object.values(playersObj).forEach(p => {
     if (p.color === 'white') {
-      playerWhiteStatus.textContent = p.ready ? 'Ready' : 'Picked';
+      playerWhiteStatus.textContent = p.ready ? 'Ready' : 'Picked White';
     }
     if (p.color === 'black') {
-      playerBlackStatus.textContent = p.ready ? 'Ready' : 'Picked';
+      playerBlackStatus.textContent = p.ready ? 'Ready' : 'Picked Black';
     }
   });
   console.log('[room.js] updatePlayerStatus:', playersObj);
@@ -217,8 +217,7 @@ if (chatForm && chatInput && chatMessages) {
     e.preventDefault();
     const msg = chatInput.value.trim();
     if (msg) {
-      const senderLabel = myRole ? myRole : "You";
-      appendChatMessage(senderLabel, msg);
+      appendChatMessage("You", msg);
       socket.emit('chatMessage', { room: roomCode, msg });
       chatInput.value = '';
       console.log('[room.js] Sent chat message:', msg);

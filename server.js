@@ -374,8 +374,15 @@ io.on('connection', (socket) => {
     });
 
     // --- CHAT HANDLER ---
-    socket.on('chatMessage', ({ sender, msg, self }) => {
-    appendChatMessage(sender === socket.id ? "You" : sender, msg);
+    socket.on('chatMessage', ({ room, msg }) => {
+        // Find the sender's role or fallback to socket.id
+        let sender = "Player";
+        if (playerInfo[room] && playerInfo[room][socket.id]) {
+            sender = playerInfo[room][socket.id].color
+                ? playerInfo[room][socket.id].color.charAt(0).toUpperCase() + playerInfo[room][socket.id].color.slice(1)
+                : "Player";
+        }
+        io.to(room).emit('chatMessage', { sender, msg });
     });
 
     socket.on('disconnect', () => {
