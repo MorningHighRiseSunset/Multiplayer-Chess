@@ -50,6 +50,10 @@ io.on('connection', (socket) => {
     });
 
     socket.on('joinRoom', (roomCode, callback) => {
+        if (!roomCode) {
+            callback({ error: 'No room code provided.' });
+            return;
+        }
         roomCode = roomCode.toUpperCase();
         if (!rooms[roomCode]) {
             callback({ error: 'Room not found.' });
