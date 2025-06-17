@@ -5,7 +5,14 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+
+// Enable CORS for your Netlify frontend
+const io = new Server(server, {
+    cors: {
+        origin: "https://pvp-chess.netlify.app",
+        methods: ["GET", "POST"]
+    }
+});
 
 const PORT = process.env.PORT || 3000;
 
