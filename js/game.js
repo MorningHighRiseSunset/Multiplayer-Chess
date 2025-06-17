@@ -16,7 +16,7 @@ const pieceUnicode = {
   "k":"♚","q":"♛","r":"♜","b":"♝","n":"♞","p":"♟"
 };
 
-const chess = new Chess();
+const chess = window.Chess ? new window.Chess() : new window.chess.Chess();
 let selected = null;
 let myTurn = (color === "white");
 let myColor = color;
