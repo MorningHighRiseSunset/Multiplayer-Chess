@@ -336,7 +336,7 @@ io.on('connection', (socket) => {
         if (
             getType(movedPiece) === "P" &&
             ((getColor(movedPiece) === "w" && toR === 0) ||
-             (getColor(movedPiece) === "b" && toR === 7)) &&
+            (getColor(movedPiece) === "b" && toR === 7)) &&
             move.promotion
         ) {
             b2[toR][toC] = getColor(movedPiece) + move.promotion.toUpperCase();
