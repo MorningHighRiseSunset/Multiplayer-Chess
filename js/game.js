@@ -1,4 +1,4 @@
-const socket = io('https://multiplayer-chess-exdx.onrender.com'); // <-- use your Render backend URL
+const socket = io('https://multiplayer-chess-exdx.onrender.com');
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');
 const myColor = urlParams.get('color') || 'white';
@@ -35,8 +35,117 @@ let legalMoves = [];
 let myTurn = (myColor === 'white');
 let lastMove = null;
 let gameOver = false;
+let preMove = null;
+let animating = false;
+let animationFrame = null;
+let animationData = null;
 const boardElem = document.getElementById('chess3d');
 const statusElem = document.getElementById('game-status');
+
+// --- Move history panel ---
+let moveHistoryElem = document.getElementById('move-history');
+if (!moveHistoryElem) {
+  moveHistoryElem = document.createElement('div');
+  moveHistoryElem.id = 'move-history';
+  moveHistoryElem.style.width = '180px';
+  moveHistoryElem.style.background = '#232323';
+  moveHistoryElem.style.border = '1.5px solid #ffe082';
+  moveHistoryElem.style.borderRadius = '10px';
+  moveHistoryElem.style.boxShadow = '0 4px 16px #0007';
+  moveHistoryElem.style.padding = '10px';
+  moveHistoryElem.style.margin = '18px 0';
+  moveHistoryElem.style.fontSize = '1em';
+  moveHistoryElem.style.color = '#ffe082';
+  moveHistoryElem.style.maxHeight = '384px';
+  moveHistoryElem.style.overflowY = 'auto';
+  moveHistoryElem.innerHTML = '<b>Move History</b><div id="move-history-list"></div>';
+  boardElem.parentNode.insertBefore(moveHistoryElem, boardElem.nextSibling);
+}
+
+// --- Resign/Draw buttons ---
+let controlPanel = document.getElementById('game-controls');
+if (!controlPanel) {
+  controlPanel = document.createElement('div');
+  controlPanel.id = 'game-controls';
+  controlPanel.style.margin = '18px 0';
+  controlPanel.style.display = 'flex';
+  controlPanel.style.gap = '12px';
+  boardElem.parentNode.insertBefore(controlPanel, moveHistoryElem.nextSibling);
+}
+if (!document.getElementById('resign-btn')) {
+  const resignBtn = document.createElement('button');
+  resignBtn.id = 'resign-btn';
+  resignBtn.textContent = 'Resign';
+  resignBtn.style.background = '#ffe082';
+  resignBtn.style.color = '#222';
+  resignBtn.style.fontWeight = 'bold';
+  resignBtn.style.border = 'none';
+  resignBtn.style.borderRadius = '8px';
+  resignBtn.style.padding = '8px 18px';
+  resignBtn.style.cursor = 'pointer';
+  resignBtn.onclick = () => {
+    if (!gameOver && confirm('Are you sure you want to resign?')) {
+      socket.emit('resign', { roomCode });
+    }
+  };
+  controlPanel.appendChild(resignBtn);
+}
+if (!document.getElementById('draw-btn')) {
+  const drawBtn = document.createElement('button');
+  drawBtn.id = 'draw-btn';
+  drawBtn.textContent = 'Offer Draw';
+  drawBtn.style.background = '#ffe082';
+  drawBtn.style.color = '#222';
+  drawBtn.style.fontWeight = 'bold';
+  drawBtn.style.border = 'none';
+  drawBtn.style.borderRadius = '8px';
+  drawBtn.style.padding = '8px 18px';
+  drawBtn.style.cursor = 'pointer';
+  drawBtn.onclick = () => {
+    if (!gameOver) socket.emit('offerDraw', { roomCode });
+  };
+  controlPanel.appendChild(drawBtn);
+}
+
+// Promotion modal
+let promotionCallback = null;
+let promotionModal = document.getElementById('promotion-modal');
+if (!promotionModal) {
+  promotionModal = document.createElement('div');
+  promotionModal.id = 'promotion-modal';
+  promotionModal.style.display = 'none';
+  promotionModal.style.position = 'fixed';
+  promotionModal.style.left = '50%';
+  promotionModal.style.top = '50%';
+  promotionModal.style.transform = 'translate(-50%, -50%)';
+  promotionModal.style.background = '#222';
+  promotionModal.style.padding = '20px';
+  promotionModal.style.borderRadius = '8px';
+  promotionModal.style.zIndex = '1000';
+  promotionModal.innerHTML = `
+    <div style="color:#fff; margin-bottom:10px;">Choose promotion:</div>
+    <div id="promotion-choices"></div>
+  `;
+  document.body.appendChild(promotionModal);
+}
+function showPromotionBox(color, cb) {
+  promotionCallback = cb;
+  const choices = ['Q','R','B','N'];
+  const container = promotionModal.querySelector('#promotion-choices');
+  container.innerHTML = '';
+  choices.forEach(type => {
+    const btn = document.createElement('button');
+    btn.textContent = pieceUnicode[color + type];
+    btn.style.fontSize = '2em';
+    btn.style.margin = '0 10px';
+    btn.onclick = () => {
+      promotionModal.style.display = 'none';
+      if (promotionCallback) promotionCallback(type);
+    };
+    container.appendChild(btn);
+  });
+  promotionModal.style.display = 'block';
+}
 
 function getColor(piece) { return piece ? piece[0] : null; }
 function getType(piece) { return piece ? piece[1] : null; }
@@ -48,8 +157,8 @@ function cloneBoard(b) { return b.map(row => row.slice()); }
 function algebraic(r, c) { return "abcdefgh"[c] + (8 - r); }
 function parseAlgebraic(sq) { return [8 - Number(sq[1]), "abcdefgh".indexOf(sq[0])]; }
 
-// --- Move validation (same as server) ---
-function isLegalMove(fromR, fromC, toR, toC, b, turn) {
+// --- Move validation (with en passant and castling) ---
+function isLegalMove(fromR, fromC, toR, toC, b, turn, castling, enPassant) {
   const piece = b[fromR][fromC];
   if (!piece) return false;
   const color = getColor(piece);
@@ -70,7 +179,8 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn) {
     if (dc === 0 && dr === 2*dir && fromR === startRow && !dest && !b[fromR+dir][fromC]) return true;
     // Capture
     if (Math.abs(dc) === 1 && dr === dir && dest && getColor(dest) !== color) return true;
-    // TODO: En passant
+    // En passant
+    if (Math.abs(dc) === 1 && dr === dir && !dest && enPassant && enPassant[0] === toR && enPassant[1] === toC) return true;
     return false;
   }
   // KNIGHT
@@ -121,20 +231,71 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn) {
   // KING
   if (type === "K") {
     if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) return !isOwnPiece(dest);
-    // TODO: Castling
+    // Castling
+    if (dr === 0 && Math.abs(dc) === 2) {
+      // King-side
+      if (dc === 2 && castling[color + "K"]) {
+        if (!b[fromR][fromC+1] && !b[fromR][fromC+2]) {
+          if (b[fromR][fromC+3] === color + "R") {
+            if (!isSquareAttacked(fromR, fromC, b, color) &&
+                !isSquareAttacked(fromR, fromC+1, b, color) &&
+                !isSquareAttacked(fromR, fromC+2, b, color)) {
+              return true;
+            }
+          }
+        }
+      }
+      // Queen-side
+      if (dc === -2 && castling[color + "Q"]) {
+        if (!b[fromR][fromC-1] && !b[fromR][fromC-2] && !b[fromR][fromC-3]) {
+          if (b[fromR][fromC-4] === color + "R") {
+            if (!isSquareAttacked(fromR, fromC, b, color) &&
+                !isSquareAttacked(fromR, fromC-1, b, color) &&
+                !isSquareAttacked(fromR, fromC-2, b, color)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
     return false;
   }
   return false;
 }
 
-function getLegalMovesForPiece(r, c, b, turn) {
+function isSquareAttacked(r, c, b, color) {
+  const opp = color === "w" ? "b" : "w";
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+    if (b[i][j] && getColor(b[i][j]) === opp) {
+      if (isLegalMove(i, j, r, c, b, opp, gameState.castling, gameState.enPassant)) return true;
+    }
+  }
+  return false;
+}
+
+function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
   const moves = [];
   for (let tr = 0; tr < 8; tr++) for (let tc = 0; tc < 8; tc++) {
-    if ((r !== tr || c !== tc) && isLegalMove(r, c, tr, tc, b, turn)) {
+    if ((r !== tr || c !== tc) && isLegalMove(r, c, tr, tc, b, turn, castling, enPassant)) {
       // Simulate move and check for self-check
       let b2 = cloneBoard(b);
-      b2[tr][tc] = b2[r][c];
+      let movedPiece = b2[r][c];
+      // Handle en passant
+      if (getType(movedPiece) === "P" && tc !== c && !b2[tr][tc]) {
+        b2[r][tc] = null;
+      }
+      b2[tr][tc] = movedPiece;
       b2[r][c] = null;
+      // Handle castling
+      if (getType(movedPiece) === "K" && Math.abs(tc - c) === 2) {
+        if (tc > c) {
+          b2[r][5] = b2[r][7];
+          b2[r][7] = null;
+        } else {
+          b2[r][3] = b2[r][0];
+          b2[r][0] = null;
+        }
+      }
       // Find king
       let kingR = -1, kingC = -1;
       for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
@@ -143,7 +304,7 @@ function getLegalMovesForPiece(r, c, b, turn) {
       let inCheck = false;
       for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
         if (b2[i][j] && getColor(b2[i][j]) !== turn) {
-          if (isLegalMove(i, j, kingR, kingC, b2, getColor(b2[i][j]))) inCheck = true;
+          if (isLegalMove(i, j, kingR, kingC, b2, getColor(b2[i][j]), castling, enPassant)) inCheck = true;
         }
       }
       if (!inCheck) moves.push([tr, tc]);
@@ -152,6 +313,61 @@ function getLegalMovesForPiece(r, c, b, turn) {
   return moves;
 }
 
+// --- Animate piece movement ---
+function animateMove(from, to, piece, cb) {
+  animating = true;
+  const boardRect = boardElem.getBoundingClientRect();
+  const fromSq = getSquareElem(from[0], from[1]);
+  const toSq = getSquareElem(to[0], to[1]);
+  if (!fromSq || !toSq) { animating = false; cb && cb(); return; }
+  const fromRect = fromSq.getBoundingClientRect();
+  const toRect = toSq.getBoundingClientRect();
+  const ghost = document.createElement('div');
+  ghost.className = 'square';
+  ghost.style.position = 'fixed';
+  ghost.style.left = fromRect.left + 'px';
+  ghost.style.top = fromRect.top + 'px';
+  ghost.style.width = fromRect.width + 'px';
+  ghost.style.height = fromRect.height + 'px';
+  ghost.style.zIndex = 10000;
+  ghost.style.pointerEvents = 'none';
+  ghost.style.background = 'none';
+  ghost.style.fontSize = fromSq.style.fontSize || '2em';
+  ghost.style.display = 'flex';
+  ghost.style.alignItems = 'center';
+  ghost.style.justifyContent = 'center';
+  ghost.textContent = pieceUnicode[piece];
+  document.body.appendChild(ghost);
+
+  let start = null;
+  function step(ts) {
+    if (!start) start = ts;
+    let t = Math.min((ts - start) / 180, 1);
+    ghost.style.left = (fromRect.left + (toRect.left - fromRect.left) * t) + 'px';
+    ghost.style.top = (fromRect.top + (toRect.top - fromRect.top) * t) + 'px';
+    if (t < 1) {
+      animationFrame = requestAnimationFrame(step);
+    } else {
+      document.body.removeChild(ghost);
+      animating = false;
+      cb && cb();
+    }
+  }
+  animationFrame = requestAnimationFrame(step);
+}
+
+function getSquareElem(r, c) {
+  // r,c are board coordinates (0-7, 0-7)
+  let idx;
+  if (myColor === "white") {
+    idx = r * 8 + c;
+  } else {
+    idx = (7 - r) * 8 + (7 - c);
+  }
+  return boardElem.children[idx];
+}
+
+// --- Render board with last move highlight and pre-move highlight ---
 function renderBoard() {
   const board = gameState.board;
   boardElem.innerHTML = "";
@@ -169,6 +385,7 @@ function renderBoard() {
         sq.textContent = pieceUnicode[piece] || "";
         sq.style.color = piece[0] === "b" ? "#222" : "#fff";
       }
+      // Highlight selected
       if (selected && selected[0] == boardR && selected[1] == boardC) {
         sq.style.outline = "3px solid #ffe082";
         sq.style.zIndex = 2;
@@ -178,21 +395,100 @@ function renderBoard() {
         sq.style.background = "#ffe082";
         sq.style.cursor = "pointer";
       }
+      // Highlight last move
+      if (lastMove && (
+        (lastMove.from[0] === boardR && lastMove.from[1] === boardC) ||
+        (lastMove.to[0] === boardR && lastMove.to[1] === boardC)
+      )) {
+        sq.style.background = "#ffd54f";
+      }
+      // Highlight pre-move
+      if (preMove && (
+        (preMove.from[0] === boardR && preMove.from[1] === boardC) ||
+        (preMove.to[0] === boardR && preMove.to[1] === boardC)
+      )) {
+        sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
+      }
       sq.onclick = () => handleSquareClick(Number(sq.dataset.r), Number(sq.dataset.c));
       boardElem.appendChild(sq);
     }
   }
 }
 
+// --- Move history panel logic ---
+function renderMoveHistory() {
+  const list = moveHistoryElem.querySelector('#move-history-list');
+  list.innerHTML = '';
+  let moves = gameState.history || [];
+  for (let i = 0; i < moves.length; i += 2) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.justifyContent = 'space-between';
+    row.style.alignItems = 'center';
+    row.style.marginBottom = '2px';
+    let moveNum = document.createElement('span');
+    moveNum.textContent = (i/2 + 1) + '.';
+    moveNum.style.marginRight = '6px';
+    moveNum.style.color = '#ffe082';
+    let whiteMove = document.createElement('a');
+    whiteMove.textContent = moves[i] || '';
+    whiteMove.style.cursor = 'pointer';
+    whiteMove.style.color = '#fff';
+    whiteMove.onclick = () => jumpToMove(i);
+    let blackMove = document.createElement('a');
+    blackMove.textContent = moves[i+1] || '';
+    blackMove.style.cursor = 'pointer';
+    blackMove.style.color = '#fff';
+    blackMove.onclick = () => jumpToMove(i+1);
+    row.appendChild(moveNum);
+    row.appendChild(whiteMove);
+    row.appendChild(document.createTextNode(' '));
+    row.appendChild(blackMove);
+    list.appendChild(row);
+  }
+}
+function jumpToMove(idx) {
+  // Not implemented: would require server to send FENs or board states for each move.
+  alert('Jump to move not implemented in this version.');
+}
+
+// --- Pre-move support ---
 function handleSquareClick(r, c) {
-  if (!myTurn || gameOver) return;
+  if (animating || gameOver) return;
   const board = gameState.board;
   const piece = board[r][c];
+  if (!myTurn) {
+    // Pre-move logic
+    if (!preMove && piece && isOwnPiece(piece)) {
+      preMove = { from: [r, c], to: null };
+      renderBoard();
+      return;
+    }
+    if (preMove && !preMove.to && !(preMove.from[0] === r && preMove.from[1] === c)) {
+      preMove.to = [r, c];
+      renderBoard();
+      return;
+    }
+    if (preMove && preMove.to && (preMove.from[0] === r && preMove.from[1] === c)) {
+      preMove = null;
+      renderBoard();
+      return;
+    }
+    return;
+  }
+  // Normal move logic
   if (!selected) {
-    if (piece && ((myColor === "white" && piece[0] === "w") || (myColor === "black" && piece[0] === "b"))) {
+    if (piece && isOwnPiece(piece)) {
       selected = [r, c];
-      // Calculate legal moves for this piece
-      legalMoves = getLegalMovesForPiece(r, c, board, gameState.turn);
+      legalMoves = getLegalMovesForPiece(r, c, board, gameState.turn, gameState.castling, gameState.enPassant);
+      // If king, and castling is available, show castling popup
+      if (getType(piece) === "K") {
+        let castlingMoves = legalMoves.filter(([tr, tc]) => Math.abs(tc - c) === 2);
+        if (castlingMoves.length > 0) {
+          showCastlingBox(castlingMoves, r, c);
+          return;
+        }
+      }
       renderBoard();
     }
     return;
@@ -210,22 +506,157 @@ function handleSquareClick(r, c) {
     to: [r, c],
     promotion: null
   };
+  // Promotion
   if (getType(board[fromR][fromC]) === "P" && (r === 0 || r === 7)) {
-    move.promotion = prompt("Promote to (Q, R, B, N):", "Q") || "Q";
+    showPromotionBox(getColor(board[fromR][fromC]), (type) => {
+      move.promotion = type;
+      sendMove(move);
+    });
+  } else {
+    sendMove(move);
   }
-  socket.emit('move', { move, roomCode });
   selected = null;
   legalMoves = [];
 }
 
+function sendMove(move) {
+  socket.emit('move', { move, roomCode });
+}
+
+// Castling popup
+let castlingModal = document.getElementById('castling-modal');
+function showCastlingBox(castlingMoves, kingR, kingC) {
+  if (!castlingModal) {
+    castlingModal = document.createElement('div');
+    castlingModal.id = 'castling-modal';
+    castlingModal.style.display = 'none';
+    castlingModal.style.position = 'fixed';
+    castlingModal.style.left = '50%';
+    castlingModal.style.top = '50%';
+    castlingModal.style.transform = 'translate(-50%, -50%)';
+    castlingModal.style.background = '#222';
+    castlingModal.style.padding = '20px';
+    castlingModal.style.borderRadius = '8px';
+    castlingModal.style.zIndex = '1000';
+    castlingModal.innerHTML = `
+      <div style="color:#fff; margin-bottom:10px;">Castling available:</div>
+      <div id="castling-choices"></div>
+      <button id="castling-cancel" style="margin-top:10px;">Cancel</button>
+    `;
+    document.body.appendChild(castlingModal);
+  }
+  const container = castlingModal.querySelector('#castling-choices');
+  container.innerHTML = '';
+  castlingMoves.forEach(([tr, tc]) => {
+    const btn = document.createElement('button');
+    btn.textContent = tc > kingC ? 'King-side' : 'Queen-side';
+    btn.style.fontSize = '1.2em';
+    btn.style.margin = '0 10px';
+    btn.onclick = () => {
+      castlingModal.style.display = 'none';
+      const move = {
+        from: [kingR, kingC],
+        to: [tr, tc],
+        promotion: null
+      };
+      sendMove(move);
+      selected = null;
+      legalMoves = [];
+    };
+    container.appendChild(btn);
+  });
+  castlingModal.querySelector('#castling-cancel').onclick = () => {
+    castlingModal.style.display = 'none';
+    selected = null;
+    legalMoves = [];
+    renderBoard();
+  };
+  castlingModal.style.display = 'block';
+}
+
+// --- Animate on move from server ---
 function updateFromServer(newState) {
+  // Animate if move
+  let prevBoard = gameState.board;
+  let prevHistory = gameState.history || [];
+  let newHistory = newState.history || [];
+  let move = null;
+  if (newHistory.length > prevHistory.length) {
+    move = newHistory[newHistory.length - 1];
+    // Try to parse move for animation
+    if (move && typeof move === "string") {
+      let m = move.match(/^([a-h][1-8])[-x]?([a-h][1-8])/);
+      if (m) {
+        let from = parseAlgebraic(m[1]);
+        let to = parseAlgebraic(m[2]);
+        let piece = prevBoard[from[0]][from[1]];
+        lastMove = { from, to };
+        animateMove(from, to, piece, () => {
+          gameState = newState;
+          myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
+          selected = null;
+          legalMoves = [];
+          renderBoard();
+          renderMoveHistory();
+          checkGameOver();
+          if (!gameOver) statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+          // If pre-move is set and it's now our turn, try to play it
+          if (myTurn && preMove && preMove.from && preMove.to) {
+            let [fr, fc] = preMove.from, [tr, tc] = preMove.to;
+            let piece = gameState.board[fr][fc];
+            if (piece && isOwnPiece(piece)) {
+              let moves = getLegalMovesForPiece(fr, fc, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
+              if (moves.some(([r, c]) => r === tr && c === tc)) {
+                let move = { from: [fr, fc], to: [tr, tc], promotion: null };
+                if (getType(piece) === "P" && (tr === 0 || tr === 7)) {
+                  showPromotionBox(getColor(piece), (type) => {
+                    move.promotion = type;
+                    sendMove(move);
+                  });
+                } else {
+                  sendMove(move);
+                }
+              }
+            }
+            preMove = null;
+            renderBoard();
+          }
+        });
+        return;
+      }
+    }
+  }
+  // No animation fallback
   gameState = newState;
   myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
   selected = null;
   legalMoves = [];
+  lastMove = null;
   renderBoard();
+  renderMoveHistory();
   checkGameOver();
   if (!gameOver) statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+  // Pre-move logic
+  if (myTurn && preMove && preMove.from && preMove.to) {
+    let [fr, fc] = preMove.from, [tr, tc] = preMove.to;
+    let piece = gameState.board[fr][fc];
+    if (piece && isOwnPiece(piece)) {
+      let moves = getLegalMovesForPiece(fr, fc, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
+      if (moves.some(([r, c]) => r === tr && c === tc)) {
+        let move = { from: [fr, fc], to: [tr, tc], promotion: null };
+        if (getType(piece) === "P" && (tr === 0 || tr === 7)) {
+          showPromotionBox(getColor(piece), (type) => {
+            move.promotion = type;
+            sendMove(move);
+          });
+        } else {
+          sendMove(move);
+        }
+      }
+    }
+    preMove = null;
+    renderBoard();
+  }
 }
 
 function checkGameOver() {
@@ -237,6 +668,9 @@ function checkGameOver() {
     gameOver = true;
   } else if (gameState.status === "draw") {
     statusElem.textContent = "Draw!";
+    gameOver = true;
+  } else if (gameState.status === "resign") {
+    statusElem.textContent = "Opponent resigned. You win!";
     gameOver = true;
   }
 }
@@ -259,7 +693,24 @@ socket.on('opponentLeft', () => {
   gameOver = true;
 });
 
+socket.on('resign', () => {
+  statusElem.textContent = "Opponent resigned. You win!";
+  gameOver = true;
+});
+
+socket.on('offerDraw', () => {
+  if (confirm("Opponent offers a draw. Accept?")) {
+    socket.emit('acceptDraw', { roomCode });
+  }
+});
+
+socket.on('draw', () => {
+  statusElem.textContent = "Draw!";
+  gameOver = true;
+});
+
 renderBoard();
+renderMoveHistory();
 statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
 
 // --- Chat logic ---
