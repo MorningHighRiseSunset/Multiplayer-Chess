@@ -6,7 +6,6 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
-// Enable CORS for your Netlify frontend
 const io = new Server(server, {
     cors: {
         origin: "https://pvp-chess.netlify.app",
@@ -16,31 +15,26 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static files
 app.use(express.static(__dirname));
-
-// Show a plain message at root ("/")
-app.get('/', (req, res) => {
-    res.send('Chess multiplayer server is running!');
-});
-
-// Serve lobby, room, and game HTML for direct navigation
-app.get('/lobby', (req, res) => {
-    res.sendFile(path.join(__dirname, 'lobby.html'));
-});
-app.get('/room', (req, res) => {
-    res.sendFile(path.join(__dirname, 'room.html'));
-});
-app.get('/game', (req, res) => {
-    res.sendFile(path.join(__dirname, 'game.html'));
-});
+app.get('/', (req, res) => res.send('Chess multiplayer server is running!'));
+app.get('/lobby', (req, res) => res.sendFile(path.join(__dirname, 'lobby.html')));
+app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'room.html')));
+app.get('/game', (req, res) => res.sendFile(path.join(__dirname, 'game.html')));
 
 const rooms = {}; // { roomCode: [socketId, ...] }
 const playerInfo = {}; // { roomCode: { socketId: { color, ready } } }
+const roomDeleteTimeouts = {}; // { roomCode: timeoutId }
 
 function broadcastRoomPlayers(roomCode) {
     const sockets = rooms[roomCode] || [];
     io.to(roomCode).emit('roomPlayers', sockets, playerInfo[roomCode] || {});
+}
+
+function clearRoomDeleteTimeout(roomCode) {
+    if (roomDeleteTimeouts[roomCode]) {
+        clearTimeout(roomDeleteTimeouts[roomCode]);
+        delete roomDeleteTimeouts[roomCode];
+    }
 }
 
 io.on('connection', (socket) => {
@@ -57,6 +51,7 @@ io.on('connection', (socket) => {
         if (typeof callback === "function") {
             callback({ roomCode });
         }
+        clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
         console.log(`[createRoom] Created room: ${roomCode} by ${socket.id}`);
     });
@@ -84,16 +79,33 @@ io.on('connection', (socket) => {
             }
             return;
         }
+
+        // State transfer: If there is a player slot with color/ready but no active socket, transfer it to this socket
+        let transferred = false;
+        if (playerInfo[roomCode]) {
+            for (const [oldSocketId, info] of Object.entries(playerInfo[roomCode])) {
+                if (!rooms[roomCode].includes(oldSocketId)) {
+                    playerInfo[roomCode][socket.id] = { ...info };
+                    delete playerInfo[roomCode][oldSocketId];
+                    transferred = true;
+                    console.log(`[joinRoom] Transferred state from ${oldSocketId} to ${socket.id} in room ${roomCode}`);
+                    break;
+                }
+            }
+        }
+        if (!transferred) {
+            if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
+            if (!playerInfo[roomCode][socket.id]) playerInfo[roomCode][socket.id] = { color: null, ready: false };
+        }
+
         rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
-        if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        if (!playerInfo[roomCode][socket.id]) playerInfo[roomCode][socket.id] = { color: null, ready: false };
         if (typeof callback === "function") {
             callback({ roomCode });
         }
+        clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        // Notify both players that the game can start
         io.to(roomCode).emit('startGame', { roomCode });
         console.log(`[joinRoom] ${socket.id} joined room: ${roomCode}`);
     });
@@ -121,9 +133,13 @@ io.on('connection', (socket) => {
         if (rooms[room]) {
             rooms[room] = rooms[room].filter(id => id !== socket.id);
             if (rooms[room].length === 0) {
-                delete rooms[room];
-                delete playerInfo[room];
-                console.log(`[leaveRoom] Room deleted: ${room}`);
+                // Start grace period for deletion
+                roomDeleteTimeouts[room] = setTimeout(() => {
+                    delete rooms[room];
+                    delete playerInfo[room];
+                    delete roomDeleteTimeouts[room];
+                    console.log(`[leaveRoom] Room deleted (timeout): ${room}`);
+                }, 10000); // 10 seconds
             } else {
                 if (playerInfo[room]) delete playerInfo[room][socket.id];
                 broadcastRoomPlayers(room);
@@ -138,7 +154,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('move', (data) => {
-        // data: { from, to, piece, roomCode }
         socket.to(socket.roomCode).emit('move', data);
     });
 
@@ -147,9 +162,13 @@ io.on('connection', (socket) => {
         if (roomCode && rooms[roomCode]) {
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
             if (rooms[roomCode].length === 0) {
-                delete rooms[roomCode];
-                delete playerInfo[roomCode];
-                console.log(`[disconnect] Room deleted: ${roomCode}`);
+                // Start grace period for deletion
+                roomDeleteTimeouts[roomCode] = setTimeout(() => {
+                    delete rooms[roomCode];
+                    delete playerInfo[roomCode];
+                    delete roomDeleteTimeouts[roomCode];
+                    console.log(`[disconnect] Room deleted (timeout): ${roomCode}`);
+                }, 10000); // 10 seconds
             } else {
                 if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
                 broadcastRoomPlayers(roomCode);
