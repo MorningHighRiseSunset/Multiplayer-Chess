@@ -11,9 +11,10 @@ if (!roomCode || !color) {
 const boardElem = document.getElementById('chess3d');
 const statusElem = document.getElementById('game-status');
 
+// Use color+type for Unicode mapping
 const pieceUnicode = {
-  "K":"♔","Q":"♕","R":"♖","B":"♗","N":"♘","P":"♙",
-  "k":"♚","q":"♛","r":"♜","b":"♝","n":"♞","p":"♟"
+  wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
+  bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟"
 };
 
 const chess = new window.Chess();
@@ -36,9 +37,9 @@ function renderBoard() {
       sq.dataset.r = boardR;
       sq.dataset.c = boardC;
       if (piece) {
-        sq.textContent = pieceUnicode[piece.type.toUpperCase() === piece.type ? piece.type : piece.type.toLowerCase()];
-        if (piece.color === "b") sq.style.color = "#222";
-        else sq.style.color = "#fff";
+        const key = piece.color + piece.type.toUpperCase();
+        sq.textContent = pieceUnicode[key] || "";
+        sq.style.color = piece.color === "b" ? "#222" : "#fff";
       }
       // Highlight selected
       if (selected && selected[0] == boardR && selected[1] == boardC) {
