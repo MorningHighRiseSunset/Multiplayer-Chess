@@ -40,6 +40,8 @@ function renderBoard() {
         const key = piece.color + piece.type.toUpperCase();
         sq.textContent = pieceUnicode[key] || "";
         sq.style.color = piece.color === "b" ? "#222" : "#fff";
+      } else {
+        sq.textContent = ""; // Make sure empty squares are empty
       }
       // Highlight selected
       if (selected && selected[0] == boardR && selected[1] == boardC) {
