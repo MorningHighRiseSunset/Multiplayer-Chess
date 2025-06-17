@@ -9,14 +9,23 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
+// Serve static files
 app.use(express.static(__dirname));
 
+// Show a plain message at root ("/") like your checkers server
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'lobby.html'));
+    res.send('Chess multiplayer server is running!');
 });
 
+// Serve lobby and room HTML for direct navigation
+app.get('/lobby', (req, res) => {
+    res.sendFile(path.join(__dirname, 'lobby.html'));
+});
 app.get('/room', (req, res) => {
     res.sendFile(path.join(__dirname, 'room.html'));
+});
+app.get('/game', (req, res) => {
+    res.sendFile(path.join(__dirname, 'game.html'));
 });
 
 const rooms = {}; // { roomCode: [socketId, ...] }
