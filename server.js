@@ -2,14 +2,23 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const cors = require('cors'); // <-- Add this line
 
 const app = express();
 const server = http.createServer(app);
 
+// --- CORS for Express ---
+app.use(cors({
+  origin: 'https://pvp-chess.netlify.app',
+  credentials: true
+}));
+
+// --- CORS for Socket.IO ---
 const io = new Server(server, {
     cors: {
         origin: "https://pvp-chess.netlify.app",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
@@ -313,6 +322,7 @@ io.on('connection', (socket) => {
         broadcastRoomPlayers(room);
     });
 
+    // --- MAIN MOVE HANDLER ---
     socket.on('move', ({ move, roomCode }) => {
         const game = games[roomCode];
         if (!game || game.status) return;

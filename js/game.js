@@ -1,4 +1,4 @@
-const socket = io('https://your-render-backend-url.onrender.com'); // <-- use your Render backend URL
+const socket = io('https://multiplayer-chess-exdx.onrender.com'); // <-- use your Render backend URL
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');
 const myColor = urlParams.get('color') || 'white';
