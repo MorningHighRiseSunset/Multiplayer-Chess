@@ -16,7 +16,7 @@ const pieceUnicode = {
   "k":"♚","q":"♛","r":"♜","b":"♝","n":"♞","p":"♟"
 };
 
-const chess = window.Chess ? new window.Chess() : new window.chess.Chess();
+const chess = new window.Chess();
 let selected = null;
 let myTurn = (color === "white");
 let myColor = color;
@@ -35,17 +35,22 @@ function renderBoard() {
       const piece = displayBoard[r][c];
       sq.dataset.r = boardR;
       sq.dataset.c = boardC;
-      if (piece) sq.textContent = pieceUnicode[piece.color === "w" ? piece.type.toUpperCase() : piece.type];
+      if (piece) {
+        sq.textContent = pieceUnicode[piece.type.toUpperCase() === piece.type ? piece.type : piece.type.toLowerCase()];
+        if (piece.color === "b") sq.style.color = "#222";
+        else sq.style.color = "#fff";
+      }
       // Highlight selected
       if (selected && selected[0] == boardR && selected[1] == boardC) {
-        sq.style.outline = "2px solid #ffe082";
+        sq.style.outline = "3px solid #ffe082";
+        sq.style.zIndex = 2;
       }
       // Highlight last move
       if (lastMove && (
         (lastMove.from[0] == boardR && lastMove.from[1] == boardC) ||
         (lastMove.to[0] == boardR && lastMove.to[1] == boardC)
       )) {
-        sq.style.background = "#ffe08255";
+        sq.style.background = "#ffe082";
       }
       sq.onclick = () => handleSquareClick(Number(sq.dataset.r), Number(sq.dataset.c));
       boardElem.appendChild(sq);
@@ -104,16 +109,18 @@ function checkGameOver() {
     statusElem.textContent = "Stalemate!";
   } else if (chess.in_draw()) {
     statusElem.textContent = "Draw!";
-  } else if (chess.in_check()) {
-    statusElem.textContent += " (Check)";
+  } else if (chess.in_threefold_repetition()) {
+    statusElem.textContent = "Draw by repetition!";
+  } else if (chess.insufficient_material()) {
+    statusElem.textContent = "Draw by insufficient material!";
   }
 }
 
 socket.on('connect', () => {
   socket.emit('joinRoom', roomCode, (res) => {
-    if (res.error) {
-      alert(res.error);
-      window.location = "lobby.html";
+    if (res && res.error) {
+      statusElem.textContent = res.error;
+      setTimeout(() => window.location = "lobby.html", 2000);
     }
   });
 });
