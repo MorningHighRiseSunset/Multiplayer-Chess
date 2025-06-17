@@ -40,7 +40,9 @@ const socket = io('https://multiplayer-chess-exdx.onrender.com', {
 });
 
 document.getElementById('create-room').addEventListener('click', () => {
+    console.log('[lobby.js] Create Room button clicked');
     socket.emit('createRoom', ({ roomCode }) => {
+        console.log('[lobby.js] Room created with code:', roomCode);
         window.location.href = `room.html?room=${roomCode}`;
     });
 });
@@ -50,7 +52,9 @@ document.getElementById('join-form').addEventListener('submit', function(e) {
     let code = document.getElementById('join-room-code').value.trim();
     if (!code) return;
     code = code.toUpperCase(); // Ensure uppercase
+    console.log('[lobby.js] Attempting to join room with code:', code);
     socket.emit('joinRoom', code, (res) => {
+        console.log('[lobby.js] joinRoom response:', res);
         if (res.error) {
             alert(res.error);
         } else {

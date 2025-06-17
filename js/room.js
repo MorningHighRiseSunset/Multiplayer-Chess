@@ -35,10 +35,11 @@ if (bg) {
 }
 
 // --- Room logic ---
-const socket = io('https://multiplayer-chess-exdx.onrender.com');
-
 const params = new URLSearchParams(window.location.search);
 const roomCode = params.get('room');
+console.log('[room.js] Loaded room page with code:', roomCode);
+
+const socket = io('https://multiplayer-chess-exdx.onrender.com');
 
 let myColorPick = null;
 let myAssignedColor = null;
@@ -83,6 +84,7 @@ let mySocketId = null;
 function updatePlayerIcons(playerList) {
   iconPlayer1.classList.toggle('active', !!playerList[0]);
   iconPlayer2.classList.toggle('active', !!playerList[1]);
+  console.log('[room.js] updatePlayerIcons:', playerList);
 }
 
 // Update player status in UI
@@ -97,19 +99,28 @@ function updatePlayerStatus(playersObj) {
       playerBlackStatus.textContent = p.ready ? 'Ready' : 'Picked';
     }
   });
+  console.log('[room.js] updatePlayerStatus:', playersObj);
 }
 
 // On page load, join the room
-socket.emit('joinRoom', roomCode);
+console.log('[room.js] Emitting joinRoom for code:', roomCode);
+socket.emit('joinRoom', roomCode, (res) => {
+  console.log('[room.js] joinRoom response:', res);
+  if (res && res.error) {
+    statusDiv.textContent = res.error;
+  }
+});
 
 // On connect, store my socket id
 socket.on('connect', () => {
   mySocketId = socket.id;
+  console.log('[room.js] Socket connected:', socket.id);
   // Restore color pick if needed
   const storedColor = sessionStorage.getItem('myColorPick');
   if (storedColor && !myColorPick) {
     myColorPick = storedColor;
     socket.emit('pickColor', { room: roomCode, color: myColorPick });
+    console.log('[room.js] Restored color pick:', myColorPick);
   }
   socket.emit('getRoomPlayers', roomCode);
 });
@@ -127,6 +138,7 @@ colorButtons.forEach(btn => {
     statusDiv.textContent = `You picked ${myColorPick.charAt(0).toUpperCase() + myColorPick.slice(1)}`;
     readyBtn.disabled = false;
     sessionStorage.setItem('myColorPick', myColorPick);
+    console.log('[room.js] Picked color:', myColorPick);
   };
 });
 
@@ -141,6 +153,7 @@ readyBtn.onclick = () => {
   socket.emit('playerReady', { room: roomCode, color: myColorPick });
   readyBtn.disabled = true;
   statusDiv.textContent = "Waiting for other player...";
+  console.log('[room.js] Ready as:', myColorPick);
 };
 
 // Leave button
@@ -152,6 +165,7 @@ if (leaveBtn) {
     sessionStorage.removeItem('startFirstTurn');
     sessionStorage.removeItem('myColorPick');
     window.location.href = 'lobby.html';
+    console.log('[room.js] Left room:', roomCode);
   };
 }
 
@@ -161,24 +175,28 @@ if (leaveBtn) {
 socket.on('roomPlayers', (playerList, playersObj) => {
   updatePlayerIcons(playerList);
   updatePlayerStatus(playersObj);
+  console.log('[room.js] Received roomPlayers:', playerList, playersObj);
 });
 
 // Server sends status message
 socket.on('roomStatus', ({ msg }) => {
   statusDiv.textContent = msg;
+  console.log('[room.js] roomStatus:', msg);
 });
 
 // Server tells both to start game
 socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
-  myAssignedColor = colorAssignments[socket.id];
-  myRole = roles[socket.id];
+  myAssignedColor = colorAssignments ? colorAssignments[socket.id] : null;
+  myRole = roles ? roles[socket.id] : null;
   sessionStorage.setItem('myAssignedColor', myAssignedColor);
   sessionStorage.setItem('myRole', myRole);
   sessionStorage.setItem('startFirstTurn', firstTurn);
   if (myAssignedColor && myRole) {
     window.location.href = `game.html?room=${roomCode}&color=${myAssignedColor}`;
+    console.log('[room.js] Starting game as', myAssignedColor, myRole);
   } else {
     statusDiv.textContent = "Error: Could not assign color/role. Please rejoin the room.";
+    console.log('[room.js] Error: Could not assign color/role.');
   }
 });
 
@@ -196,11 +214,13 @@ if (chatForm && chatInput && chatMessages) {
       appendChatMessage(senderLabel, msg);
       socket.emit('chatMessage', { room: roomCode, msg });
       chatInput.value = '';
+      console.log('[room.js] Sent chat message:', msg);
     }
   });
 
   socket.on('chatMessage', ({ sender, msg }) => {
     appendChatMessage(sender, msg);
+    console.log('[room.js] Received chat message:', sender, msg);
   });
 
   function appendChatMessage(sender, msg) {

@@ -38,6 +38,8 @@ function clearRoomDeleteTimeout(roomCode) {
 }
 
 io.on('connection', (socket) => {
+    console.log('[server.js] New connection:', socket.id);
+
     socket.on('createRoom', (callback) => {
         let roomCode;
         do {
@@ -158,6 +160,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        console.log('[server.js] Socket disconnected:', socket.id, 'Room:', socket.roomCode);
         const roomCode = socket.roomCode;
         if (roomCode && rooms[roomCode]) {
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
