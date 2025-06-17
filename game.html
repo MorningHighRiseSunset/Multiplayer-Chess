@@ -9,6 +9,14 @@
   <div class="game-container">
     <div id="chess3d"></div>
     <div id="game-status"></div>
+    <div class="chat-card">
+    <div class="chat-header">Game Chat</div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <form class="chat-form" id="chat-form">
+      <input class="chat-input" id="chat-input" type="text" placeholder="Type a message..." maxlength="200" autocomplete="off" />
+      <button type="submit" class="chat-send">Send</button>
+    </form>
+  </div>
     <a href="lobby.html" id="leave-btn">Leave</a>
   </div>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>

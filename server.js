@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const cors = require('cors'); // <-- Add this line
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
@@ -371,6 +371,11 @@ io.on('connection', (socket) => {
         }
 
         io.to(roomCode).emit('move', game);
+    });
+
+    // --- CHAT HANDLER ---
+    socket.on('chatMessage', ({ room, msg }) => {
+        io.to(room).emit('chatMessage', { sender: socket.id.slice(0, 6), msg });
     });
 
     socket.on('disconnect', () => {

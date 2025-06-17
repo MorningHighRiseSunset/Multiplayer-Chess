@@ -74,3 +74,75 @@ body, html {
   color: #222;
   border-color: #ffe082;
 }
+
+/* Chat box styles */
+.chat-card {
+  width: 340px;
+  background: #232323;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px #0007;
+  display: flex;
+  flex-direction: column;
+  margin-top: 18px;
+  border: 1.5px solid #ffe082;
+  overflow: hidden;
+}
+
+.chat-header {
+  background: #ffe082;
+  color: #222;
+  font-weight: bold;
+  padding: 10px 14px;
+  font-size: 1.1em;
+  border-bottom: 1px solid #e0c060;
+  letter-spacing: 1px;
+}
+
+.chat-messages {
+  flex: 1;
+  min-height: 120px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: #232323;
+  font-size: 1em;
+  color: #ffe082;
+  word-break: break-word;
+}
+
+.chat-messages div {
+  margin-bottom: 7px;
+}
+
+.chat-form {
+  display: flex;
+  border-top: 1px solid #e0c060;
+  background: #232323;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  background: #2d2d2d;
+  color: #ffe082;
+  font-size: 1em;
+  border-radius: 0 0 0 10px;
+}
+
+.chat-send {
+  background: #ffe082;
+  color: #222;
+  border: none;
+  padding: 0 18px;
+  font-size: 1em;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 0 0 10px 0;
+  transition: background 0.2s, color 0.2s;
+}
+.chat-send:hover {
+  background: #ffd54f;
+  color: #111;
+}

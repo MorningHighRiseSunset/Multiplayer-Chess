@@ -261,3 +261,31 @@ socket.on('opponentLeft', () => {
 
 renderBoard();
 statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+
+// --- Chat logic ---
+const chatForm = document.getElementById('chat-form');
+const chatInput = document.getElementById('chat-input');
+const chatMessages = document.getElementById('chat-messages');
+
+if (chatForm && chatInput && chatMessages) {
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const msg = chatInput.value.trim();
+    if (msg) {
+      appendChatMessage("You", msg);
+      socket.emit('chatMessage', { room: roomCode, msg });
+      chatInput.value = '';
+    }
+  });
+
+  socket.on('chatMessage', ({ sender, msg }) => {
+    appendChatMessage(sender, msg);
+  });
+
+  function appendChatMessage(sender, msg) {
+    const div = document.createElement('div');
+    div.innerHTML = `<strong>${sender}:</strong> ${msg}`;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
