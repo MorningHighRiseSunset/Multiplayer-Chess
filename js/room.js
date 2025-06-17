@@ -44,6 +44,10 @@ let myColorPick = null;
 let myAssignedColor = null;
 let myRole = null;
 
+// Player icons for presence
+const iconPlayer1 = document.getElementById('icon-player1');
+const iconPlayer2 = document.getElementById('icon-player2');
+
 const colorButtons = [
   document.getElementById('pick-white'),
   document.getElementById('pick-black')
@@ -71,6 +75,45 @@ if (copyBtn && roomCodeDiv) {
   };
 }
 
+// Track player presence and color/ready status
+let players = {}; // { socketId: { color, ready } }
+let mySocketId = null;
+
+// Update player icons based on presence
+function updatePlayerIcons(playerList) {
+  iconPlayer1.classList.toggle('active', !!playerList[0]);
+  iconPlayer2.classList.toggle('active', !!playerList[1]);
+}
+
+// Update player status in UI
+function updatePlayerStatus(playersObj) {
+  playerWhiteStatus.textContent = 'Waiting...';
+  playerBlackStatus.textContent = 'Waiting...';
+  Object.values(playersObj).forEach(p => {
+    if (p.color === 'white') {
+      playerWhiteStatus.textContent = p.ready ? 'Ready' : 'Picked';
+    }
+    if (p.color === 'black') {
+      playerBlackStatus.textContent = p.ready ? 'Ready' : 'Picked';
+    }
+  });
+}
+
+// On page load, join the room
+socket.emit('joinRoom', roomCode);
+
+// On connect, store my socket id
+socket.on('connect', () => {
+  mySocketId = socket.id;
+  // Restore color pick if needed
+  const storedColor = sessionStorage.getItem('myColorPick');
+  if (storedColor && !myColorPick) {
+    myColorPick = storedColor;
+    socket.emit('pickColor', { room: roomCode, color: myColorPick });
+  }
+  socket.emit('getRoomPlayers', roomCode);
+});
+
 // Pick color
 colorButtons.forEach(btn => {
   btn.onclick = () => {
@@ -87,32 +130,6 @@ colorButtons.forEach(btn => {
   };
 });
 
-// Listen for color picked
-socket.on('colorPicked', ({ color }) => {
-  statusDiv.textContent = `A player picked ${color}`;
-  if (color === 'white') {
-    playerWhiteStatus.textContent = 'Picked';
-  } else if (color === 'black') {
-    playerBlackStatus.textContent = 'Picked';
-  }
-});
-
-// Listen for room state updates
-socket.on('roomState', ({ roles, colors }) => {
-  // Reset statuses
-  playerWhiteStatus.textContent = 'Waiting...';
-  playerBlackStatus.textContent = 'Waiting...';
-  for (const [sockId, color] of Object.entries(colors)) {
-    if (color === 'white') playerWhiteStatus.textContent = 'Picked';
-    if (color === 'black') playerBlackStatus.textContent = 'Picked';
-  }
-  // Show ready if available
-  for (const [sockId, role] of Object.entries(roles)) {
-    if (role === 'Player 1') playerWhiteName.textContent = 'White';
-    if (role === 'Player 2') playerBlackName.textContent = 'Black';
-  }
-});
-
 // Ready button
 readyBtn.onclick = () => {
   myColorPick = myColorPick || sessionStorage.getItem('myColorPick');
@@ -127,28 +144,34 @@ readyBtn.onclick = () => {
 };
 
 // Leave button
-leaveBtn.onclick = () => {
-  socket.emit('leaveRoom', { room: roomCode });
-  sessionStorage.removeItem('myAssignedColor');
-  sessionStorage.removeItem('myRole');
-  sessionStorage.removeItem('startFirstTurn');
-  sessionStorage.removeItem('myColorPick');
-  window.location.href = 'lobby.html';
-};
+if (leaveBtn) {
+  leaveBtn.onclick = () => {
+    socket.emit('leaveRoom', { room: roomCode });
+    sessionStorage.removeItem('myAssignedColor');
+    sessionStorage.removeItem('myRole');
+    sessionStorage.removeItem('startFirstTurn');
+    sessionStorage.removeItem('myColorPick');
+    window.location.href = 'lobby.html';
+  };
+}
 
-// Listen for both players ready and color assignments
+// --- Multiplayer feedback events ---
+
+// Server sends full player list and their status
+socket.on('roomPlayers', (playerList, playersObj) => {
+  updatePlayerIcons(playerList);
+  updatePlayerStatus(playersObj);
+});
+
+// Server sends status message
+socket.on('roomStatus', ({ msg }) => {
+  statusDiv.textContent = msg;
+});
+
+// Server tells both to start game
 socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   myAssignedColor = colorAssignments[socket.id];
   myRole = roles[socket.id];
-  if ((!myAssignedColor || !myRole) && colorAssignments) {
-    for (const [id, color] of Object.entries(colorAssignments)) {
-      if (color === myColorPick) {
-        myAssignedColor = color;
-        myRole = roles[id];
-        break;
-      }
-    }
-  }
   sessionStorage.setItem('myAssignedColor', myAssignedColor);
   sessionStorage.setItem('myRole', myRole);
   sessionStorage.setItem('startFirstTurn', firstTurn);
@@ -156,53 +179,6 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
     window.location.href = `game.html?room=${roomCode}&color=${myAssignedColor}`;
   } else {
     statusDiv.textContent = "Error: Could not assign color/role. Please rejoin the room.";
-  }
-});
-
-// Listen for opponent ready
-socket.on('opponentReady', ({ color }) => {
-  statusDiv.textContent = `Opponent is ready (${color})`;
-  if (color === 'white') playerWhiteStatus.textContent = 'Ready';
-  if (color === 'black') playerBlackStatus.textContent = 'Ready';
-});
-
-// Listen for both players picked
-socket.on('bothPicked', () => {
-  statusDiv.textContent = "Both players picked colors. Click Ready!";
-});
-
-// Listen for both players ready
-socket.on('bothReady', () => {
-  statusDiv.textContent = "Both players are ready. Waiting for server to start the game...";
-  setTimeout(() => {
-    if (!sessionStorage.getItem('myAssignedColor') || !sessionStorage.getItem('myRole')) {
-      statusDiv.textContent = "Still waiting for server to start the game... If this takes too long, try reloading.";
-    }
-  }, 3000);
-});
-
-// Listen for player joined/left
-socket.on('playerJoined', ({ role }) => {
-  statusDiv.textContent = `${role} joined the room.`;
-});
-socket.on('playerLeft', ({ role }) => {
-  statusDiv.textContent = `${role} left the room.`;
-});
-
-// Show error if both pick the same color
-socket.on('roomStatus', ({ msg }) => {
-  statusDiv.textContent = msg;
-});
-
-// On page load, join the room
-socket.emit('joinRoom', roomCode);
-
-// Handle socket reconnect
-socket.on('connect', () => {
-  const storedColor = sessionStorage.getItem('myColorPick');
-  if (storedColor && !myColorPick) {
-    myColorPick = storedColor;
-    socket.emit('pickColor', { room: roomCode, color: myColorPick });
   }
 });
 

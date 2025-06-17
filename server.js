@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 // Serve static files
 app.use(express.static(__dirname));
 
-// Show a plain message at root ("/") if you want, or serve lobby.html
+// Show a plain message at root ("/")
 app.get('/', (req, res) => {
     res.send('Chess multiplayer server is running!');
 });
@@ -36,6 +36,12 @@ app.get('/game', (req, res) => {
 });
 
 const rooms = {}; // { roomCode: [socketId, ...] }
+const playerInfo = {}; // { roomCode: { socketId: { color, ready } } }
+
+function broadcastRoomPlayers(roomCode) {
+    const sockets = rooms[roomCode] || [];
+    io.to(roomCode).emit('roomPlayers', sockets, playerInfo[roomCode] || {});
+}
 
 io.on('connection', (socket) => {
     socket.on('createRoom', (callback) => {
@@ -46,9 +52,12 @@ io.on('connection', (socket) => {
         rooms[roomCode] = [socket.id];
         socket.join(roomCode);
         socket.roomCode = roomCode;
+        if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
+        playerInfo[roomCode][socket.id] = { color: null, ready: false };
         if (typeof callback === "function") {
             callback({ roomCode });
         }
+        broadcastRoomPlayers(roomCode);
     });
 
     socket.on('joinRoom', (roomCode, callback) => {
@@ -74,11 +83,47 @@ io.on('connection', (socket) => {
         rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
+        if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
+        playerInfo[roomCode][socket.id] = { color: null, ready: false };
         if (typeof callback === "function") {
             callback({ roomCode });
         }
+        broadcastRoomPlayers(roomCode);
         // Notify both players that the game can start
         io.to(roomCode).emit('startGame', { roomCode });
+    });
+
+    socket.on('pickColor', ({ room, color }) => {
+        if (!playerInfo[room]) playerInfo[room] = {};
+        playerInfo[room][socket.id].color = color;
+        playerInfo[room][socket.id].ready = false;
+        broadcastRoomPlayers(room);
+        io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
+    });
+
+    socket.on('playerReady', ({ room, color }) => {
+        if (!playerInfo[room]) playerInfo[room] = {};
+        playerInfo[room][socket.id].ready = true;
+        broadcastRoomPlayers(room);
+        io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
+    });
+
+    socket.on('leaveRoom', ({ room }) => {
+        if (rooms[room]) {
+            rooms[room] = rooms[room].filter(id => id !== socket.id);
+            if (rooms[room].length === 0) {
+                delete rooms[room];
+                delete playerInfo[room];
+            } else {
+                delete playerInfo[room][socket.id];
+                broadcastRoomPlayers(room);
+            }
+        }
+        socket.leave(room);
+    });
+
+    socket.on('getRoomPlayers', (room) => {
+        broadcastRoomPlayers(room);
     });
 
     socket.on('move', (data) => {
@@ -92,7 +137,10 @@ io.on('connection', (socket) => {
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
             if (rooms[roomCode].length === 0) {
                 delete rooms[roomCode];
+                delete playerInfo[roomCode];
             } else {
+                if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
+                broadcastRoomPlayers(roomCode);
                 io.to(roomCode).emit('opponentLeft');
             }
         }

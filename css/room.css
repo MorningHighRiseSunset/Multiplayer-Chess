@@ -412,3 +412,23 @@ body, html {
   color: #232b39;
   border-color: #ffe082;
 }
+
+.player-icons {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
+.player-icon {
+  font-size: 2em;
+  color: #555;
+  filter: grayscale(1) brightness(0.7);
+  transition: color 0.2s, filter 0.2s;
+}
+.player-icon.active {
+  color: #ffe082;
+  filter: none;
+  text-shadow: 0 2px 8px #ffe08288;
+}
