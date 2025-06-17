@@ -47,7 +47,7 @@ document.getElementById('create-room').addEventListener('click', () => {
 
 document.getElementById('join-form').addEventListener('submit', function(e) {
     e.preventDefault();
-    const code = document.getElementById('room-code').value.trim();
+    const code = document.getElementById('join-room-code').value.trim();
     if (!code) return;
     socket.emit('joinRoom', code, (res) => {
         if (res.error) {
