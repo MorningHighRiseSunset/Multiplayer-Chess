@@ -32,10 +32,10 @@ const initialBoard = [
   ["wR","wN","wB","wQ","wK","wB","wN","wR"]
 ];
 
-const rooms = {}; // { roomCode: [socketId, ...] }
-const playerInfo = {}; // { roomCode: { socketId: { color, ready } } }
-const roomDeleteTimeouts = {}; // { roomCode: timeoutId }
-const games = {}; // { roomCode: gameState }
+const rooms = {};
+const playerInfo = {};
+const roomDeleteTimeouts = {};
+const games = {};
 
 function broadcastRoomPlayers(roomCode) {
     const sockets = rooms[roomCode] || [];
@@ -49,7 +49,7 @@ function clearRoomDeleteTimeout(roomCode) {
     }
 }
 
-// --- Minimal Chess Logic for Move Validation (same as in game.js, can be expanded) ---
+// --- Chess Logic ---
 function getColor(piece) { return piece ? piece[0] : null; }
 function getType(piece) { return piece ? piece[1] : null; }
 function cloneBoard(b) { return b.map(row => row.slice()); }
@@ -63,6 +63,7 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn) {
     const dr = toR - fromR, dc = toC - fromC;
     const dest = b[toR][toC];
 
+    if (color !== turn) return false;
     if (isOwnPiece(dest, color)) return false;
 
     // PAWN
@@ -171,8 +172,6 @@ function hasLegalMoves(b, color) {
 // --- End Chess Logic ---
 
 io.on('connection', (socket) => {
-    console.log('[server.js] New connection:', socket.id);
-
     socket.on('createRoom', (callback) => {
         let roomCode;
         do {
@@ -183,7 +182,6 @@ io.on('connection', (socket) => {
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
         playerInfo[roomCode][socket.id] = { color: null, ready: false };
-        // Initialize game state
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
@@ -199,7 +197,6 @@ io.on('connection', (socket) => {
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        console.log(`[createRoom] Created room: ${roomCode} by ${socket.id}`);
     });
 
     socket.on('joinRoom', (roomCode, callback) => {
@@ -246,7 +243,6 @@ io.on('connection', (socket) => {
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
 
-        // Send current game state to the joining player
         if (games[roomCode]) {
             socket.emit('move', games[roomCode]);
         }
@@ -268,7 +264,6 @@ io.on('connection', (socket) => {
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
 
-        // --- Only start game if both players are ready ---
         const readyPlayers = Object.values(playerInfo[room]).filter(p => p.ready);
         if (readyPlayers.length === 2) {
             const sockets = Object.keys(playerInfo[room]);
@@ -276,7 +271,6 @@ io.on('connection', (socket) => {
             const roles = {};
             let firstTurn = 'white';
 
-            // Assign based on color picks if available, else default
             let whiteSocket = null, blackSocket = null;
             for (const sid of sockets) {
                 if (playerInfo[room][sid].color === 'white') whiteSocket = sid;
@@ -321,7 +315,7 @@ io.on('connection', (socket) => {
 
     socket.on('move', ({ move, roomCode }) => {
         const game = games[roomCode];
-        if (!game || game.status) return; // Game not found or already over
+        if (!game || game.status) return;
 
         const board = game.board;
         const turn = game.turn;
@@ -336,8 +330,21 @@ io.on('connection', (socket) => {
 
         // Simulate move and check for self-check
         let b2 = cloneBoard(board);
-        b2[toR][toC] = b2[fromR][fromC];
+        let movedPiece = b2[fromR][fromC];
+
+        // Pawn promotion
+        if (
+            getType(movedPiece) === "P" &&
+            ((getColor(movedPiece) === "w" && toR === 0) ||
+             (getColor(movedPiece) === "b" && toR === 7)) &&
+            move.promotion
+        ) {
+            b2[toR][toC] = getColor(movedPiece) + move.promotion.toUpperCase();
+        } else {
+            b2[toR][toC] = movedPiece;
+        }
         b2[fromR][fromC] = null;
+
         if (isInCheck(b2, color)) return;
 
         // Move is legal, update game state
