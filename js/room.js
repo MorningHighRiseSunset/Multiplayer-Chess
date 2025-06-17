@@ -35,7 +35,7 @@ if (bg) {
 }
 
 // --- Room logic ---
-const socket = io();
+const socket = io('https://multiplayer-chess-exdx.onrender.com');
 
 const params = new URLSearchParams(window.location.search);
 const roomCode = params.get('room');

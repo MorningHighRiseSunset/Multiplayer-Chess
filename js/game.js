@@ -1,4 +1,4 @@
-const socket = io();
+const socket = io('https://multiplayer-chess-exdx.onrender.com');
 
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');

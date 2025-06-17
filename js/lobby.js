@@ -40,7 +40,7 @@ document.getElementById('create-room').addEventListener('click', () => {
 
 // Lobby socket logic
 if (typeof io !== "undefined") {
-    const socket = io();
+    const socket = io('https://multiplayer-chess-exdx.onrender.com');
 
     document.getElementById('join-form').addEventListener('submit', function(e) {
         e.preventDefault();
