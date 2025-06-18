@@ -738,7 +738,9 @@ function showCastlingBox(castlingMoves, kingR, kingC) {
     `;
     document.body.appendChild(castlingModal);
   }
+  // Always re-query the choices container in case the modal was just created
   const container = castlingModal.querySelector('#castling-choices');
+  if (!container) return; // Defensive: should never happen now
   container.innerHTML = '';
   castlingMoves.forEach(([tr, tc]) => {
     const btn = document.createElement('button');

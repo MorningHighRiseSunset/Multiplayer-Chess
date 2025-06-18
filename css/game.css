@@ -30,8 +30,6 @@ body, html {
 }
 
 .square {
-  width: 48px;
-  height: 48px;
   box-sizing: border-box;
   border: 1px solid #333;
   display: flex;
@@ -41,6 +39,7 @@ body, html {
   font-family: 'Segoe UI Symbol', 'Arial Unicode MS', sans-serif;
   user-select: none;
   transition: background 0.15s, outline 0.15s, box-shadow 0.15s;
+  aspect-ratio: 1/1;
 }
 .white { background: #f0d9b5; }
 .black { background: #b58863; }
