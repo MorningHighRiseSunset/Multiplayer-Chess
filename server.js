@@ -226,7 +226,7 @@ io.on('connection', (socket) => {
         if (playerInfo[roomCode]) {
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
                 if (!info.playerId) {
-                    console.log(`[CLEANUP] Removing slot with undefined playerId: ${pid} in room ${roomCode}`);
+                    console.log(`[CLEANUP] Hey, this is a ghost socket (${pid}) in room ${roomCode} and NOT a real player, so this shouldn't be taking up a slot in the room. Removing ghost slot.`);
                     delete playerInfo[roomCode][pid];
                 }
             }
@@ -267,9 +267,10 @@ io.on('connection', (socket) => {
                 delete playerInfo[roomCode][pid];
             }
         }
-        // If not found, assign new slot if room not full
+        // Only count slots with a valid playerId
+        const realPlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId).length;
         if (!playerSlot) {
-            if (Object.keys(playerInfo[roomCode]).length >= 2) {
+            if (realPlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
                 }
@@ -317,7 +318,7 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        playerInfo[roomCode][socket.id] = { color: null, ready: false, playerId: socket.id };
+        // DO NOT assign a slot here!
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
