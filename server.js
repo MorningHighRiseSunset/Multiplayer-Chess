@@ -1,12 +1,9 @@
-console.log(`[DEBUG] joinRoom called: playerId=${playerId}, socket.id=${socket.id}, room=${roomCode}`);
-console.log(`[DEBUG] playerInfo[${roomCode}]:`, playerInfo[roomCode]);
-console.log(`[DEBUG] rooms[${roomCode}]:`, rooms[roomCode]);
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const cors = require('cors');
+const { randomUUID } = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -224,11 +221,27 @@ io.on('connection', (socket) => {
             console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
             return;
         }
-        // Find or assign player slot by playerId
+
+        // --- Ensure playerId is unique in this room ---
         if (!playerId) playerId = socket.id;
-        let playerSlot = null;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
+
+        // If this playerId is already present and active in this room, force a new playerId
+        let duplicate = false;
+        for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+            if (info.playerId === playerId && !info.disconnected) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            const oldPlayerId = playerId;
+            playerId = randomUUID();
+            console.log(`[JOIN] Duplicate playerId detected (${oldPlayerId}) in room ${roomCode}. Assigned new playerId: ${playerId}`);
+        }
+
         // Try to find existing slot for this playerId
+        let playerSlot = null;
         for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
             if (info.playerId === playerId) {
                 playerSlot = pid;
@@ -273,7 +286,7 @@ io.on('connection', (socket) => {
         }
         // Send current game state if available
         if (typeof callback === "function") {
-            callback({ roomCode, gameState: games[roomCode] });
+            callback({ roomCode, gameState: games[roomCode], playerId });
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
