@@ -43,8 +43,9 @@ const initialBoard = [
 
 const rooms = {};
 const playerInfo = {};
-const roomDeleteTimeouts = {};
 const games = {};
+const playerSockets = {}; // playerId -> { socketId, roomCode, disconnectedAt }
+const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
     const sockets = rooms[roomCode] || [];
@@ -181,16 +182,87 @@ function hasLegalMoves(b, color) {
 // --- End Chess Logic ---
 
 io.on('connection', (socket) => {
+    // --- JOIN ROOM WITH RECONNECTION SUPPORT ---
+    socket.on('joinRoom', (data, callback) => {
+        let roomCode, playerId;
+        if (typeof data === "object") {
+            roomCode = data.roomCode || data.room;
+            playerId = data.playerId;
+        } else {
+            roomCode = data;
+            playerId = null;
+        }
+        if (!roomCode) {
+            if (typeof callback === "function") {
+                callback({ error: 'No room code provided.' });
+            }
+            return;
+        }
+        roomCode = roomCode.toUpperCase();
+        if (!rooms[roomCode]) {
+            if (typeof callback === "function") {
+                callback({ error: 'Room not found.' });
+            }
+            return;
+        }
+        // Find or assign player slot by playerId
+        if (!playerId) playerId = socket.id;
+        let playerSlot = null;
+        if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
+        // Try to find existing slot for this playerId
+        for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+            if (info.playerId === playerId) {
+                playerSlot = pid;
+                break;
+            }
+        }
+        // If not found, assign new slot if room not full
+        if (!playerSlot) {
+            if (Object.keys(playerInfo[roomCode]).length >= 2) {
+                if (typeof callback === "function") {
+                    callback({ error: 'Room is full.' });
+                }
+                return;
+            }
+            playerSlot = socket.id;
+            playerInfo[roomCode][playerSlot] = { color: null, ready: false, playerId };
+        }
+        // Update playerSockets mapping
+        playerSockets[playerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
+        // Remove old socket id from rooms if present
+        rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
+        // Add new socket id
+        if (!rooms[roomCode].includes(socket.id)) rooms[roomCode].push(socket.id);
+        socket.join(roomCode);
+        socket.roomCode = roomCode;
+        socket.playerId = playerId;
+        // Mark as reconnected
+        if (playerInfo[roomCode][playerSlot]) {
+            playerInfo[roomCode][playerSlot].disconnected = false;
+        }
+        // Send current game state if available
+        if (typeof callback === "function") {
+            callback({ roomCode, gameState: games[roomCode] });
+        }
+        clearRoomDeleteTimeout(roomCode);
+        broadcastRoomPlayers(roomCode);
+        if (games[roomCode]) {
+            socket.emit('move', games[roomCode]);
+        }
+        // Notify opponent if this was a reconnection
+        socket.to(roomCode).emit('opponentReconnected');
+    });
+
     socket.on('createRoom', (callback) => {
         let roomCode;
         do {
             roomCode = Math.random().toString(36).substr(2, 6).toUpperCase();
         } while (rooms[roomCode]);
-        rooms[roomCode] = [socket.id];
+        rooms[roomCode] = [];
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        playerInfo[roomCode][socket.id] = { color: null, ready: false };
+        playerInfo[roomCode][socket.id] = { color: null, ready: false, playerId: socket.id };
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
@@ -208,58 +280,9 @@ io.on('connection', (socket) => {
         broadcastRoomPlayers(roomCode);
     });
 
-    socket.on('joinRoom', (roomCode, callback) => {
-        if (!roomCode) {
-            if (typeof callback === "function") {
-                callback({ error: 'No room code provided.' });
-            }
-            return;
-        }
-        roomCode = roomCode.toUpperCase();
-        if (!rooms[roomCode]) {
-            if (typeof callback === "function") {
-                callback({ error: 'Room not found.' });
-            }
-            return;
-        }
-        if (rooms[roomCode].length >= 2) {
-            if (typeof callback === "function") {
-                callback({ error: 'Room is full.' });
-            }
-            return;
-        }
-        let transferred = false;
-        if (playerInfo[roomCode]) {
-            for (const [oldSocketId, info] of Object.entries(playerInfo[roomCode])) {
-                if (!rooms[roomCode].includes(oldSocketId)) {
-                    playerInfo[roomCode][socket.id] = { ...info };
-                    delete playerInfo[roomCode][oldSocketId];
-                    transferred = true;
-                    break;
-                }
-            }
-        }
-        if (!transferred) {
-            if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-            if (!playerInfo[roomCode][socket.id]) playerInfo[roomCode][socket.id] = { color: null, ready: false };
-        }
-        rooms[roomCode].push(socket.id);
-        socket.join(roomCode);
-        socket.roomCode = roomCode;
-        if (typeof callback === "function") {
-            callback({ roomCode });
-        }
-        clearRoomDeleteTimeout(roomCode);
-        broadcastRoomPlayers(roomCode);
-
-        if (games[roomCode]) {
-            socket.emit('move', games[roomCode]);
-        }
-    });
-
     socket.on('pickColor', ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
-        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false };
+        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.id };
         playerInfo[room][socket.id].color = color;
         playerInfo[room][socket.id].ready = false;
         broadcastRoomPlayers(room);
@@ -268,7 +291,7 @@ io.on('connection', (socket) => {
 
     socket.on('playerReady', ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
-        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false };
+        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.id };
         playerInfo[room][socket.id].ready = true;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
@@ -385,21 +408,32 @@ io.on('connection', (socket) => {
         io.to(room).emit('chatMessage', { sender, msg });
     });
 
+    // --- DISCONNECT HANDLER WITH RECONNECT SUPPORT ---
     socket.on('disconnect', () => {
         const roomCode = socket.roomCode;
+        const playerId = socket.playerId;
+        if (playerId && playerSockets[playerId]) {
+            playerSockets[playerId].disconnectedAt = Date.now();
+        }
         if (roomCode && rooms[roomCode]) {
+            // Mark player as disconnected but keep their slot
+            for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
+                if (info.playerId === playerId) {
+                    info.disconnected = true;
+                }
+            }
+            // Remove socket id from rooms, but keep playerInfo slot
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
+            // Notify opponent
+            socket.to(roomCode).emit('opponentDisconnected');
+            // Schedule room cleanup if both players are gone
             if (rooms[roomCode].length === 0) {
                 roomDeleteTimeouts[roomCode] = setTimeout(() => {
                     delete rooms[roomCode];
                     delete playerInfo[roomCode];
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
-                }, 10000);
-            } else {
-                if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
-                broadcastRoomPlayers(roomCode);
-                io.to(roomCode).emit('opponentLeft');
+                }, 2 * 60 * 1000); // 2 minutes
             }
         }
     });

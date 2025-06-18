@@ -1,3 +1,10 @@
+// --- Persistent playerId for reconnection ---
+let playerId = localStorage.getItem('playerId');
+if (!playerId) {
+  playerId = crypto.randomUUID();
+  localStorage.setItem('playerId', playerId);
+}
+
 const socket = io('https://multiplayer-chess-exdx.onrender.com');
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');
@@ -42,6 +49,61 @@ let animationData = null;
 const boardElem = document.getElementById('chess3d');
 const statusElem = document.getElementById('game-status');
 
+// --- Responsive board styling ---
+function addResponsiveStyles() {
+  if (document.getElementById('responsive-chess-style')) return;
+  const style = document.createElement('style');
+  style.id = 'responsive-chess-style';
+  style.innerHTML = `
+    #chess3d {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      width: 480px;
+      height: 480px;
+      max-width: 98vw;
+      max-height: 98vw;
+      aspect-ratio: 1/1;
+      margin: 0 auto;
+      touch-action: manipulation;
+    }
+    .square {
+      font-size: 2em;
+      user-select: none;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      aspect-ratio: 1/1;
+    }
+    @media (max-width: 600px) {
+      #chess3d {
+        width: 98vw;
+        height: 98vw;
+        min-width: 240px;
+        min-height: 240px;
+      }
+      #move-history, #game-controls {
+        width: 98vw !important;
+        max-width: 98vw !important;
+        margin: 8px auto !important;
+        font-size: 1em !important;
+      }
+      #move-history {
+        max-height: 120px !important;
+        overflow-y: auto;
+      }
+    }
+    #promotion-modal, #castling-modal {
+      max-width: 90vw;
+      box-sizing: border-box;
+    }
+  `;
+  document.head.appendChild(style);
+}
+addResponsiveStyles();
+
 // --- Move history panel ---
 let moveHistoryElem = document.getElementById('move-history');
 if (!moveHistoryElem) {
@@ -62,7 +124,7 @@ if (!moveHistoryElem) {
   boardElem.parentNode.insertBefore(moveHistoryElem, boardElem.nextSibling);
 }
 
-// --- Resign/Draw buttons ---
+// --- Resign/Draw/Rematch buttons ---
 let controlPanel = document.getElementById('game-controls');
 if (!controlPanel) {
   controlPanel = document.createElement('div');
@@ -105,6 +167,28 @@ if (!document.getElementById('draw-btn')) {
     if (!gameOver) socket.emit('offerDraw', { roomCode });
   };
   controlPanel.appendChild(drawBtn);
+}
+if (!document.getElementById('rematch-btn')) {
+  const rematchBtn = document.createElement('button');
+  rematchBtn.id = 'rematch-btn';
+  rematchBtn.textContent = 'Rematch';
+  rematchBtn.style.background = '#ffe082';
+  rematchBtn.style.color = '#222';
+  rematchBtn.style.fontWeight = 'bold';
+  rematchBtn.style.border = 'none';
+  rematchBtn.style.borderRadius = '8px';
+  rematchBtn.style.padding = '8px 18px';
+  rematchBtn.style.cursor = 'pointer';
+  rematchBtn.style.display = 'none';
+  rematchBtn.onclick = () => {
+    socket.emit('rematch', { roomCode });
+    rematchBtn.style.display = 'none';
+  };
+  controlPanel.appendChild(rematchBtn);
+}
+function showRematchBtn() {
+  const rematchBtn = document.getElementById('rematch-btn');
+  if (rematchBtn) rematchBtn.style.display = 'inline-block';
 }
 
 // Promotion modal
@@ -367,11 +451,97 @@ function getSquareElem(r, c) {
   return boardElem.children[idx];
 }
 
-// --- Render board with last move highlight and pre-move highlight ---
+// --- Check/Checkmate Highlight ---
+function getKingPosition(color, board) {
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (board[r][c] === color + "K") return [r, c];
+  }
+  return null;
+}
+function isKingInCheck(color, board, castling, enPassant) {
+  const kingPos = getKingPosition(color, board);
+  if (!kingPos) return false;
+  return isSquareAttacked(kingPos[0], kingPos[1], board, color);
+}
+
+// --- Draw detection: insufficient material, 50-move, threefold repetition ---
+function isInsufficientMaterial(board) {
+  // Only kings
+  let pieces = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    let p = board[r][c];
+    if (p) pieces.push(p);
+  }
+  if (pieces.length === 2) return true;
+  // King + bishop/knight vs king
+  if (pieces.length === 3) {
+    return pieces.filter(x => x[1] !== 'K').every(x => x[1] === 'B' || x[1] === 'N');
+  }
+  // King + bishop vs king + bishop (same color)
+  if (pieces.length === 4) {
+    let bishops = pieces.filter(x => x[1] === 'B');
+    if (bishops.length === 2) {
+      // Check if both bishops are on same color
+      let squares = [];
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        if (board[r][c] && board[r][c][1] === 'B') squares.push((r + c) % 2);
+      }
+      if (squares.length === 2 && squares[0] === squares[1]) return true;
+    }
+  }
+  return false;
+}
+function isThreefoldRepetition(history) {
+  // Count FENs (excluding move clocks)
+  let positions = {};
+  for (let i = 0; i < history.length; i++) {
+    let fen = history[i].fen || '';
+    if (!fen) continue;
+    positions[fen] = (positions[fen] || 0) + 1;
+    if (positions[fen] >= 3) return true;
+  }
+  return false;
+}
+function checkDrawConditions() {
+  if (isInsufficientMaterial(gameState.board)) {
+    gameState.status = "draw";
+    statusElem.textContent = "Draw by insufficient material!";
+    gameOver = true;
+    socket.emit('draw', { roomCode });
+    showRematchBtn();
+    return true;
+  }
+  if (gameState.halfmoveClock >= 100) {
+    gameState.status = "draw";
+    statusElem.textContent = "Draw by 50-move rule!";
+    gameOver = true;
+    socket.emit('draw', { roomCode });
+    showRematchBtn();
+    return true;
+  }
+  if (isThreefoldRepetition(gameState.history || [])) {
+    gameState.status = "draw";
+    statusElem.textContent = "Draw by threefold repetition!";
+    gameOver = true;
+    socket.emit('draw', { roomCode });
+    showRematchBtn();
+    return true;
+  }
+  return false;
+}
+
+// --- Render board with last move highlight, pre-move highlight, and check highlight ---
 function renderBoard() {
   const board = gameState.board;
   boardElem.innerHTML = "";
   let displayBoard = myColor === "white" ? board : [...board].reverse().map(r=>[...r].reverse());
+  let checkColor = null, checkPos = null;
+  if (gameState.status !== "checkmate" && gameState.status !== "stalemate" && !gameOver) {
+    if (isKingInCheck(gameState.turn, board, gameState.castling, gameState.enPassant)) {
+      checkColor = gameState.turn;
+      checkPos = getKingPosition(checkColor, board);
+    }
+  }
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const sq = document.createElement('div');
@@ -409,6 +579,11 @@ function renderBoard() {
       )) {
         sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
       }
+      // Highlight king in check
+      if (checkPos && boardR === checkPos[0] && boardC === checkPos[1]) {
+        sq.style.background = "#e53935";
+        sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
+      }
       sq.onclick = () => handleSquareClick(Number(sq.dataset.r), Number(sq.dataset.c));
       boardElem.appendChild(sq);
     }
@@ -426,20 +601,25 @@ function renderMoveHistory() {
     row.style.justifyContent = 'space-between';
     row.style.alignItems = 'center';
     row.style.marginBottom = '2px';
+
     let moveNum = document.createElement('span');
     moveNum.textContent = (i/2 + 1) + '.';
     moveNum.style.marginRight = '6px';
     moveNum.style.color = '#ffe082';
+
+    // Convert move objects to notation
     let whiteMove = document.createElement('a');
-    whiteMove.textContent = moves[i] || '';
+    whiteMove.textContent = moves[i] ? moveToNotation(moves[i]) : '';
     whiteMove.style.cursor = 'pointer';
     whiteMove.style.color = '#fff';
     whiteMove.onclick = () => jumpToMove(i);
+
     let blackMove = document.createElement('a');
-    blackMove.textContent = moves[i+1] || '';
+    blackMove.textContent = moves[i+1] ? moveToNotation(moves[i+1]) : '';
     blackMove.style.cursor = 'pointer';
     blackMove.style.color = '#fff';
     blackMove.onclick = () => jumpToMove(i+1);
+
     row.appendChild(moveNum);
     row.appendChild(whiteMove);
     row.appendChild(document.createTextNode(' '));
@@ -447,6 +627,19 @@ function renderMoveHistory() {
     list.appendChild(row);
   }
 }
+
+// Helper to convert move object to notation
+function moveToNotation(move) {
+  if (!move) return '';
+  // If move is already a string, return as is
+  if (typeof move === 'string') return move;
+  // If move is object: {from: [r,c], to: [r,c], promotion}
+  let from = move.from ? algebraic(move.from[0], move.from[1]) : '';
+  let to = move.to ? algebraic(move.to[0], move.to[1]) : '';
+  let promo = move.promotion ? '=' + move.promotion : '';
+  return from + to + promo;
+}
+
 function jumpToMove(idx) {
   // Not implemented: would require server to send FENs or board states for each move.
   alert('Jump to move not implemented in this version.');
@@ -663,23 +856,49 @@ function checkGameOver() {
   if (gameState.status === "checkmate") {
     statusElem.textContent = "Checkmate! " + (myTurn ? "You lose." : "You win!");
     gameOver = true;
+    showRematchBtn();
   } else if (gameState.status === "stalemate") {
     statusElem.textContent = "Stalemate!";
     gameOver = true;
+    showRematchBtn();
   } else if (gameState.status === "draw") {
     statusElem.textContent = "Draw!";
     gameOver = true;
+    showRematchBtn();
   } else if (gameState.status === "resign") {
     statusElem.textContent = "Opponent resigned. You win!";
     gameOver = true;
+    showRematchBtn();
   }
+  // Check for automatic draw conditions
+  if (!gameOver) checkDrawConditions();
 }
 
+// --- Rematch event ---
+socket.on('rematch', (newState) => {
+  gameState = newState;
+  myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
+  selected = null;
+  legalMoves = [];
+  lastMove = null;
+  gameOver = false;
+  preMove = null;
+  renderBoard();
+  renderMoveHistory();
+  statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+  document.getElementById('rematch-btn').style.display = 'none';
+});
+
+// --- Reconnection logic ---
 socket.on('connect', () => {
-  socket.emit('joinRoom', roomCode, (res) => {
+  socket.emit('joinRoom', { roomCode, playerId }, (res) => {
     if (res && res.error) {
       statusElem.textContent = res.error;
       setTimeout(() => window.location = "lobby.html", 2000);
+    }
+    // If res.gameState is sent, restore it
+    if (res && res.gameState) {
+      updateFromServer(res.gameState);
     }
   });
 });
@@ -691,11 +910,13 @@ socket.on('move', (newState) => {
 socket.on('opponentLeft', () => {
   statusElem.textContent = "Opponent left the game.";
   gameOver = true;
+  showRematchBtn();
 });
 
 socket.on('resign', () => {
   statusElem.textContent = "Opponent resigned. You win!";
   gameOver = true;
+  showRematchBtn();
 });
 
 socket.on('offerDraw', () => {
@@ -707,6 +928,16 @@ socket.on('offerDraw', () => {
 socket.on('draw', () => {
   statusElem.textContent = "Draw!";
   gameOver = true;
+  showRematchBtn();
+});
+
+// --- Optional: Show waiting if opponent is disconnected ---
+socket.on('opponentDisconnected', () => {
+  statusElem.textContent = "Opponent disconnected. Waiting for them to reconnect...";
+});
+
+socket.on('opponentReconnected', () => {
+  statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
 });
 
 renderBoard();
