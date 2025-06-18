@@ -8,6 +8,13 @@
 <body>
     <div id="chess3d"></div>
     <a href="lobby.html" id="play-btn">Play</a>
+    <!-- Wake up Render server as soon as user lands on page -->
+    <script>
+        fetch('https://multiplayer-chess-exdx.onrender.com/', { mode: 'no-cors' });
+        document.getElementById('play-btn').addEventListener('click', function() {
+            fetch('https://multiplayer-chess-exdx.onrender.com/', { mode: 'no-cors' });
+        });
+    </script>
     <script src="js/play.js"></script>
 </body>
 </html>
