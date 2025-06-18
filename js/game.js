@@ -534,7 +534,6 @@ function checkDrawConditions() {
 function renderBoard() {
   const board = gameState.board;
   boardElem.innerHTML = "";
-  let displayBoard = myColor === "white" ? board : [...board].reverse().map(r=>[...r].reverse());
   let checkColor = null, checkPos = null;
   if (gameState.status !== "checkmate" && gameState.status !== "stalemate" && !gameOver) {
     if (isKingInCheck(gameState.turn, board, gameState.castling, gameState.enPassant)) {
@@ -542,49 +541,51 @@ function renderBoard() {
       checkPos = getKingPosition(checkColor, board);
     }
   }
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
+  // Loop in display order (white: 0-7, black: 7-0)
+  for (let displayR = 0; displayR < 8; displayR++) {
+    for (let displayC = 0; displayC < 8; displayC++) {
+      // Map display coordinates to board coordinates
+      let r = myColor === "white" ? displayR : 7 - displayR;
+      let c = myColor === "white" ? displayC : 7 - displayC;
       const sq = document.createElement('div');
-      sq.className = 'square ' + ((r+c)%2 ? 'black' : 'white');
-      let boardR = myColor === "white" ? r : 7 - r;
-      let boardC = myColor === "white" ? c : 7 - c;
-      const piece = displayBoard[r][c];
-      sq.dataset.r = boardR;
-      sq.dataset.c = boardC;
+      sq.className = 'square ' + ((displayR + displayC) % 2 ? 'black' : 'white');
+      const piece = board[r][c];
+      sq.dataset.r = r;
+      sq.dataset.c = c;
       if (piece) {
         sq.textContent = pieceUnicode[piece] || "";
         sq.style.color = piece[0] === "b" ? "#222" : "#fff";
       }
       // Highlight selected
-      if (selected && selected[0] == boardR && selected[1] == boardC) {
+      if (selected && selected[0] == r && selected[1] == c) {
         sq.style.outline = "3px solid #ffe082";
         sq.style.zIndex = 2;
       }
       // Highlight legal moves
-      if (legalMoves.some(([tr, tc]) => tr === boardR && tc === boardC)) {
+      if (Array.isArray(legalMoves) && legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
         sq.style.background = "#ffe082";
         sq.style.cursor = "pointer";
       }
       // Highlight last move
       if (lastMove && (
-        (lastMove.from[0] === boardR && lastMove.from[1] === boardC) ||
-        (lastMove.to[0] === boardR && lastMove.to[1] === boardC)
+        (lastMove.from[0] === r && lastMove.from[1] === c) ||
+        (lastMove.to[0] === r && lastMove.to[1] === c)
       )) {
         sq.style.background = "#ffd54f";
       }
       // Highlight pre-move
       if (preMove && (
-        (preMove.from[0] === boardR && preMove.from[1] === boardC) ||
-        (preMove.to[0] === boardR && preMove.to[1] === boardC)
+        (preMove.from[0] === r && preMove.from[1] === c) ||
+        (preMove.to[0] === r && preMove.to[1] === c)
       )) {
         sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
       }
       // Highlight king in check
-      if (checkPos && boardR === checkPos[0] && boardC === checkPos[1]) {
+      if (checkPos && r === checkPos[0] && c === checkPos[1]) {
         sq.style.background = "#e53935";
         sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
       }
-      sq.onclick = () => handleSquareClick(Number(sq.dataset.r), Number(sq.dataset.c));
+      sq.onclick = () => handleSquareClick(r, c);
       boardElem.appendChild(sq);
     }
   }
@@ -670,22 +671,14 @@ function handleSquareClick(r, c) {
     return;
   }
   // Normal move logic
-  if (!selected) {
-    if (piece && isOwnPiece(piece)) {
-      selected = [r, c];
-      legalMoves = getLegalMovesForPiece(r, c, board, gameState.turn, gameState.castling, gameState.enPassant);
-      // If king, and castling is available, show castling popup
-      if (getType(piece) === "K") {
-        let castlingMoves = legalMoves.filter(([tr, tc]) => Math.abs(tc - c) === 2);
-        if (castlingMoves.length > 0) {
-          showCastlingBox(castlingMoves, r, c);
-          return;
-        }
+    if (!selected) {
+      if (piece && isOwnPiece(piece)) {
+        selected = [r, c];
+        legalMoves = getLegalMovesForPiece(r, c, board, gameState.turn, gameState.castling, gameState.enPassant);
+        renderBoard();
       }
-      renderBoard();
+      return;
     }
-    return;
-  }
   // Only allow clicking on legal moves
   if (!legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
     selected = null;
