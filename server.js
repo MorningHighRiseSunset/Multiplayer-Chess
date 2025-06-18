@@ -8,18 +8,29 @@ const app = express();
 const server = http.createServer(app);
 
 // --- CORS for Express ---
+const allowedOrigins = [
+  'https://pvp-chess.netlify.app',
+  'http://127.0.0.1:5500',
+  'http://localhost:5500'
+];
+
 app.use(cors({
-  origin: 'https://pvp-chess.netlify.app',
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 
-// --- CORS for Socket.IO ---
 const io = new Server(server, {
-    cors: {
-        origin: "https://pvp-chess.netlify.app",
-        methods: ["GET", "POST"],
-        credentials: true
-    }
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
 });
 
 const PORT = process.env.PORT || 3000;
