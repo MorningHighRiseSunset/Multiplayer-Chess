@@ -34,6 +34,13 @@ for (let i = 0; i < TILE_COUNT; i++) {
     bg.appendChild(el);
 }
 
+// --- Persistent playerId for reconnection ---
+let playerId = localStorage.getItem('playerId');
+if (!playerId) {
+    playerId = crypto.randomUUID();
+    localStorage.setItem('playerId', playerId);
+}
+
 // Lobby socket logic
 const socket = io('https://multiplayer-chess-exdx.onrender.com', {
     transports: ['websocket', 'polling']
@@ -43,6 +50,8 @@ document.getElementById('create-room').addEventListener('click', () => {
     console.log('[lobby.js] Create Room button clicked');
     socket.emit('createRoom', ({ roomCode }) => {
         console.log('[lobby.js] Room created with code:', roomCode);
+        // Save playerId and last room for use in room.js
+        sessionStorage.setItem('lastRoomCode', roomCode);
         window.location.href = `room.html?room=${roomCode}`;
     });
 });
@@ -53,11 +62,13 @@ document.getElementById('join-form').addEventListener('submit', function(e) {
     if (!code) return;
     code = code.toUpperCase(); // Ensure uppercase
     console.log('[lobby.js] Attempting to join room with code:', code);
-    socket.emit('joinRoom', code, (res) => {
+    // Always send playerId for reconnection logic
+    socket.emit('joinRoom', { roomCode: code, playerId }, (res) => {
         console.log('[lobby.js] joinRoom response:', res);
         if (res.error) {
             alert(res.error);
         } else {
+            sessionStorage.setItem('lastRoomCode', res.roomCode);
             window.location.href = `room.html?room=${res.roomCode}`;
         }
     });

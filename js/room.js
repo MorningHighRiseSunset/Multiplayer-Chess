@@ -34,6 +34,13 @@ if (bg) {
   }
 }
 
+// --- Persistent playerId for reconnection ---
+let playerId = localStorage.getItem('playerId');
+if (!playerId) {
+  playerId = crypto.randomUUID();
+  localStorage.setItem('playerId', playerId);
+}
+
 // --- Room logic ---
 const params = new URLSearchParams(window.location.search);
 const roomCode = params.get('room');
@@ -89,29 +96,29 @@ let mySocketId = null;
 
 // Update player icons based on presence
 function updatePlayerIcons(playerList) {
-  iconPlayer1.classList.toggle('active', !!playerList[0]);
-  iconPlayer2.classList.toggle('active', !!playerList[1]);
+  if (iconPlayer1) iconPlayer1.classList.toggle('active', !!playerList[0]);
+  if (iconPlayer2) iconPlayer2.classList.toggle('active', !!playerList[1]);
   console.log('[room.js] updatePlayerIcons:', playerList);
 }
 
 // Update player status in UI
 function updatePlayerStatus(playersObj) {
-  playerWhiteStatus.textContent = 'Waiting...';
-  playerBlackStatus.textContent = 'Waiting...';
+  if (playerWhiteStatus) playerWhiteStatus.textContent = 'Waiting...';
+  if (playerBlackStatus) playerBlackStatus.textContent = 'Waiting...';
   Object.values(playersObj).forEach(p => {
-    if (p.color === 'white') {
+    if (p.color === 'white' && playerWhiteStatus) {
       playerWhiteStatus.textContent = p.ready ? 'Ready' : 'Picked White';
     }
-    if (p.color === 'black') {
+    if (p.color === 'black' && playerBlackStatus) {
       playerBlackStatus.textContent = p.ready ? 'Ready' : 'Picked Black';
     }
   });
   console.log('[room.js] updatePlayerStatus:', playersObj);
 }
 
-// On page load, join the room
-console.log('[room.js] Emitting joinRoom for code:', roomCode);
-socket.emit('joinRoom', roomCode, (res) => {
+// On page load, join the room with playerId for reconnection support
+console.log('[room.js] Emitting joinRoom for code:', roomCode, 'with playerId:', playerId);
+socket.emit('joinRoom', { roomCode, playerId }, (res) => {
   console.log('[room.js] joinRoom response:', res);
   if (res && res.error) {
     statusDiv.textContent = res.error;
@@ -134,6 +141,7 @@ socket.on('connect', () => {
 
 // Pick color
 colorButtons.forEach(btn => {
+  if (!btn) return;
   btn.onclick = () => {
     myColorPick = btn.dataset.color;
     socket.emit('pickColor', { room: roomCode, color: myColorPick });
@@ -142,26 +150,28 @@ colorButtons.forEach(btn => {
       b.classList.remove('selected');
     });
     btn.classList.add('selected');
-    statusDiv.textContent = `You picked ${myColorPick.charAt(0).toUpperCase() + myColorPick.slice(1)}`;
-    readyBtn.disabled = false;
+    if (statusDiv) statusDiv.textContent = `You picked ${myColorPick.charAt(0).toUpperCase() + myColorPick.slice(1)}`;
+    if (readyBtn) readyBtn.disabled = false;
     sessionStorage.setItem('myColorPick', myColorPick);
     console.log('[room.js] Picked color:', myColorPick);
   };
 });
 
 // Ready button
-readyBtn.onclick = () => {
-  myColorPick = myColorPick || sessionStorage.getItem('myColorPick');
-  if (!myColorPick) {
-    statusDiv.textContent = "Pick a color first!";
-    return;
-  }
-  sessionStorage.setItem('myColorPick', myColorPick);
-  socket.emit('playerReady', { room: roomCode, color: myColorPick });
-  readyBtn.disabled = true;
-  statusDiv.textContent = "Waiting for other player...";
-  console.log('[room.js] Ready as:', myColorPick);
-};
+if (readyBtn) {
+  readyBtn.onclick = () => {
+    myColorPick = myColorPick || sessionStorage.getItem('myColorPick');
+    if (!myColorPick) {
+      if (statusDiv) statusDiv.textContent = "Pick a color first!";
+      return;
+    }
+    sessionStorage.setItem('myColorPick', myColorPick);
+    socket.emit('playerReady', { room: roomCode, color: myColorPick });
+    readyBtn.disabled = true;
+    if (statusDiv) statusDiv.textContent = "Waiting for other player...";
+    console.log('[room.js] Ready as:', myColorPick);
+  };
+}
 
 // Leave button
 if (leaveBtn) {
@@ -187,7 +197,7 @@ socket.on('roomPlayers', (playerList, playersObj) => {
 
 // Server sends status message
 socket.on('roomStatus', ({ msg }) => {
-  statusDiv.textContent = msg;
+  if (statusDiv) statusDiv.textContent = msg;
   console.log('[room.js] roomStatus:', msg);
 });
 
@@ -202,7 +212,7 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
     window.location.href = `game.html?room=${roomCode}&color=${myAssignedColor}`;
     console.log('[room.js] Starting game as', myAssignedColor, myRole);
   } else {
-    statusDiv.textContent = "Error: Could not assign color/role. Please rejoin the room.";
+    if (statusDiv) statusDiv.textContent = "Error: Could not assign color/role. Please rejoin the room.";
     console.log('[room.js] Error: Could not assign color/role.');
   }
 });
