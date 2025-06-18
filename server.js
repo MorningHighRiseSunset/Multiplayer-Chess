@@ -1,3 +1,7 @@
+console.log(`[DEBUG] joinRoom called: playerId=${playerId}, socket.id=${socket.id}, room=${roomCode}`);
+console.log(`[DEBUG] playerInfo[${roomCode}]:`, playerInfo[roomCode]);
+console.log(`[DEBUG] rooms[${roomCode}]:`, rooms[roomCode]);
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
