@@ -719,59 +719,6 @@ function sendMove(move) {
   socket.emit('move', { move, roomCode });
 }
 
-// Castling popup
-let castlingModal = document.getElementById('castling-modal');
-function showCastlingBox(castlingMoves, kingR, kingC) {
-  if (!castlingModal) {
-    castlingModal = document.createElement('div');
-    castlingModal.id = 'castling-modal';
-    castlingModal.style.display = 'none';
-    castlingModal.style.position = 'fixed';
-    castlingModal.style.left = '50%';
-    castlingModal.style.top = '50%';
-    castlingModal.style.transform = 'translate(-50%, -50%)';
-    castlingModal.style.background = '#222';
-    castlingModal.style.padding = '20px';
-    castlingModal.style.borderRadius = '8px';
-    castlingModal.style.zIndex = '1000';
-    castlingModal.innerHTML = `
-      <div style="color:#fff; margin-bottom:10px;">Castling available:</div>
-      <div id="castling-choices"></div>
-      <button id="castling-cancel" style="margin-top:10px;">Cancel</button>
-    `;
-    document.body.appendChild(castlingModal);
-  }
-  // Always re-query the choices container in case the modal was just created
-  const container = castlingModal.querySelector('#castling-choices');
-  if (!container) return; // Defensive: should never happen now
-  container.innerHTML = '';
-  castlingMoves.forEach(([tr, tc]) => {
-    const btn = document.createElement('button');
-    btn.textContent = tc > kingC ? 'King-side' : 'Queen-side';
-    btn.style.fontSize = '1.2em';
-    btn.style.margin = '0 10px';
-    btn.onclick = () => {
-      castlingModal.style.display = 'none';
-      const move = {
-        from: [kingR, kingC],
-        to: [tr, tc],
-        promotion: null
-      };
-      sendMove(move);
-      selected = null;
-      legalMoves = [];
-    };
-    container.appendChild(btn);
-  });
-  castlingModal.querySelector('#castling-cancel').onclick = () => {
-    castlingModal.style.display = 'none';
-    selected = null;
-    legalMoves = [];
-    renderBoard();
-  };
-  castlingModal.style.display = 'block';
-}
-
 // --- Animate on move from server ---
 function updateFromServer(newState) {
   // Animate if move

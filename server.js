@@ -8,7 +8,6 @@ const { randomUUID } = require('crypto');
 const app = express();
 const server = http.createServer(app);
 
-// --- CORS for Express ---
 const allowedOrigins = [
   'https://pvp-chess.netlify.app',
   'http://127.0.0.1:5500',
@@ -56,7 +55,7 @@ const initialBoard = [
 const rooms = {};
 const playerInfo = {};
 const games = {};
-const playerSockets = {}; // playerId -> { socketId, roomCode, disconnectedAt }
+const playerSockets = {};
 const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
@@ -77,7 +76,75 @@ function getType(piece) { return piece ? piece[1] : null; }
 function cloneBoard(b) { return b.map(row => row.slice()); }
 function isOwnPiece(piece, color) { return piece && getColor(piece) === color; }
 function isOpponentPiece(piece, color) { return piece && getColor(piece) !== color; }
-function isLegalMove(fromR, fromC, toR, toC, b, turn) {
+
+function findKing(b, color) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        if (b[r][c] === color + "K") return [r, c];
+    }
+    return null;
+}
+
+function isInCheck(b, color) {
+    const kingPos = findKing(b, color);
+    if (!kingPos) return true;
+    const [kr, kc] = kingPos;
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const piece = b[r][c];
+        if (piece && getColor(piece) !== color) {
+            if (isLegalMove(r, c, kr, kc, b, getColor(piece), null)) return true;
+        }
+    }
+    return false;
+}
+
+function hasLegalMoves(b, color, castling, enPassant) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        const piece = b[r][c];
+        if (piece && getColor(piece) === color) {
+            for (let dr = 0; dr < 8; dr++) for (let dc = 0; dc < 8; dc++) {
+                if ((r !== dr || c !== dc) && isLegalMove(r, c, dr, dc, b, color, castling, enPassant)) {
+                    // Try move and see if king is not in check
+                    let b2 = cloneBoard(b);
+                    let movedPiece = b2[r][c];
+                    b2[dr][dc] = movedPiece;
+                    b2[r][c] = null;
+                    // Handle castling rook move
+                    if (getType(movedPiece) === "K" && Math.abs(dc - c) === 2) {
+                        if (dc > c) { // king-side
+                            b2[r][5] = b2[r][7];
+                            b2[r][7] = null;
+                        } else { // queen-side
+                            b2[r][3] = b2[r][0];
+                            b2[r][0] = null;
+                        }
+                    }
+                    if (!isInCheck(b2, color)) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// --- Castling Rights Helpers ---
+function getCastlingRights(game, color) {
+    return {
+        K: color === 'w' ? game.castling.wK : game.castling.bK,
+        Q: color === 'w' ? game.castling.wQ : game.castling.bQ
+    };
+}
+function setCastlingRights(game, color, side, value) {
+    if (color === 'w') {
+        if (side === 'K') game.castling.wK = value;
+        if (side === 'Q') game.castling.wQ = value;
+    } else {
+        if (side === 'K') game.castling.bK = value;
+        if (side === 'Q') game.castling.bQ = value;
+    }
+}
+
+// --- Main Move Validation (with castling) ---
+function isLegalMove(fromR, fromC, toR, toC, b, turn, castling, enPassant) {
     const piece = b[fromR][fromC];
     if (!piece) return false;
     const color = getColor(piece);
@@ -149,44 +216,46 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn) {
     // KING
     if (type === "K") {
         if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) return !isOwnPiece(dest, color);
-        // TODO: Castling
-        return false;
-    }
-    return false;
-}
-
-function findKing(b, color) {
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-        if (b[r][c] === color + "K") return [r, c];
-    }
-    return null;
-}
-
-function isInCheck(b, color) {
-    const [kr, kc] = findKing(b, color) || [];
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-        const piece = b[r][c];
-        if (piece && getColor(piece) !== color) {
-            if (isLegalMove(r, c, kr, kc, b, getColor(piece))) return true;
-        }
-    }
-    return false;
-}
-
-function hasLegalMoves(b, color) {
-    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-        const piece = b[r][c];
-        if (piece && getColor(piece) === color) {
-            for (let dr = 0; dr < 8; dr++) for (let dc = 0; dc < 8; dc++) {
-                if ((r !== dr || c !== dc) && isLegalMove(r, c, dr, dc, b, color)) {
-                    // Try move and see if king is not in check
+        // Castling
+        if (dr === 0 && Math.abs(dc) === 2 && castling) {
+            // King-side
+            if (dc === 2) {
+                if (
+                    fromC === 4 && toC === 6 &&
+                    castling.K &&
+                    b[fromR][5] === null && b[fromR][6] === null &&
+                    b[fromR][7] === color + "R"
+                ) {
+                    // Check king not in check, and does not pass through or land in check
                     let b2 = cloneBoard(b);
-                    b2[dr][dc] = b2[r][c];
-                    b2[r][c] = null;
-                    if (!isInCheck(b2, color)) return true;
+                    b2[fromR][4] = null; b2[fromR][5] = color + "K";
+                    if (isInCheck(b2, color)) return false;
+                    b2[fromR][5] = null; b2[fromR][6] = color + "K";
+                    if (isInCheck(b2, color)) return false;
+                    b2[fromR][6] = null; b2[fromR][4] = color + "K"; // restore
+                    return true;
+                }
+            }
+            // Queen-side
+            if (dc === -2) {
+                if (
+                    fromC === 4 && toC === 2 &&
+                    castling.Q &&
+                    b[fromR][3] === null && b[fromR][2] === null && b[fromR][1] === null &&
+                    b[fromR][0] === color + "R"
+                ) {
+                    // Check king not in check, and does not pass through or land in check
+                    let b2 = cloneBoard(b);
+                    b2[fromR][4] = null; b2[fromR][3] = color + "K";
+                    if (isInCheck(b2, color)) return false;
+                    b2[fromR][3] = null; b2[fromR][2] = color + "K";
+                    if (isInCheck(b2, color)) return false;
+                    b2[fromR][2] = null; b2[fromR][4] = color + "K"; // restore
+                    return true;
                 }
             }
         }
+        return false;
     }
     return false;
 }
@@ -318,7 +387,6 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        // DO NOT assign a slot here!
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
@@ -419,8 +487,9 @@ io.on('connection', (socket) => {
         const piece = board[fromR][fromC];
 
         // Validate move
+        const castling = getCastlingRights(game, color);
         if (!piece || getColor(piece) !== color) return;
-        if (!isLegalMove(fromR, fromC, toR, toC, board, color)) return;
+        if (!isLegalMove(fromR, fromC, toR, toC, board, color, castling, game.enPassant)) return;
 
         // Simulate move and check for self-check
         let b2 = cloneBoard(board);
@@ -439,7 +508,38 @@ io.on('connection', (socket) => {
         }
         b2[fromR][fromC] = null;
 
+        // Handle castling rook move
+        if (getType(movedPiece) === "K" && Math.abs(toC - fromC) === 2) {
+            if (toC === 6) { // king-side
+                b2[fromR][5] = b2[fromR][7];
+                b2[fromR][7] = null;
+            }
+            if (toC === 2) { // queen-side
+                b2[fromR][3] = b2[fromR][0];
+                b2[fromR][0] = null;
+            }
+        }
+
         if (isInCheck(b2, color)) return;
+
+        // Update castling rights
+        if (getType(movedPiece) === "K") {
+            setCastlingRights(game, color, 'K', false);
+            setCastlingRights(game, color, 'Q', false);
+        }
+        if (getType(movedPiece) === "R") {
+            if (color === 'w' && fromR === 7 && fromC === 0) setCastlingRights(game, 'w', 'Q', false);
+            if (color === 'w' && fromR === 7 && fromC === 7) setCastlingRights(game, 'w', 'K', false);
+            if (color === 'b' && fromR === 0 && fromC === 0) setCastlingRights(game, 'b', 'Q', false);
+            if (color === 'b' && fromR === 0 && fromC === 7) setCastlingRights(game, 'b', 'K', false);
+        }
+        // If rook is captured, update castling rights
+        if (getType(board[toR][toC]) === "R") {
+            if (color === 'w' && toR === 7 && toC === 0) setCastlingRights(game, 'w', 'Q', false);
+            if (color === 'w' && toR === 7 && toC === 7) setCastlingRights(game, 'w', 'K', false);
+            if (color === 'b' && toR === 0 && toC === 0) setCastlingRights(game, 'b', 'Q', false);
+            if (color === 'b' && toR === 0 && toC === 7) setCastlingRights(game, 'b', 'K', false);
+        }
 
         // Move is legal, update game state
         game.board = b2;
@@ -448,9 +548,10 @@ io.on('connection', (socket) => {
 
         // Check for checkmate/stalemate
         const oppColor = game.turn;
-        if (isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor)) {
+        const oppCastling = getCastlingRights(game, oppColor);
+        if (isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor, oppCastling, game.enPassant)) {
             game.status = "checkmate";
-        } else if (!isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor)) {
+        } else if (!isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor, oppCastling, game.enPassant)) {
             game.status = "stalemate";
         }
 
@@ -460,7 +561,6 @@ io.on('connection', (socket) => {
 
     // --- CHAT HANDLER ---
     socket.on('chatMessage', ({ room, msg }) => {
-        // Find the sender's role or fallback to socket.id
         let sender = "Player";
         if (playerInfo[room] && playerInfo[room][socket.id]) {
             sender = playerInfo[room][socket.id].color
@@ -479,25 +579,20 @@ io.on('connection', (socket) => {
             playerSockets[playerId].disconnectedAt = Date.now();
         }
         if (roomCode && rooms[roomCode]) {
-            // Mark player as disconnected but keep their slot
             for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
                 if (info.playerId === playerId) {
                     info.disconnected = true;
                     info.disconnectedAt = Date.now();
                 }
             }
-            // --- CLEANUP: Remove slots with undefined playerId on disconnect ---
             for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
                 if (!info.playerId) {
                     console.log(`[CLEANUP] Removing slot with undefined playerId on disconnect: ${sid} in room ${roomCode}`);
                     delete playerInfo[roomCode][sid];
                 }
             }
-            // Remove socket id from rooms, but keep playerInfo slot
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-            // Notify opponent
             socket.to(roomCode).emit('opponentDisconnected');
-            // Schedule room cleanup if both players are gone
             if (rooms[roomCode].length === 0) {
                 roomDeleteTimeouts[roomCode] = setTimeout(() => {
                     delete rooms[roomCode];
@@ -505,7 +600,7 @@ io.on('connection', (socket) => {
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
                     console.log(`[CLEANUP] Room ${roomCode} deleted after disconnect timeout.`);
-                }, 2 * 60 * 1000); // 2 minutes
+                }, 2 * 60 * 1000);
             }
         }
         console.log(`[SOCKET] Disconnected: ${socket.id} (playerId: ${playerId})`);
