@@ -222,6 +222,16 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // --- CLEANUP: Remove any slots with undefined playerId (ghosts from creator disconnect) ---
+        if (playerInfo[roomCode]) {
+            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+                if (!info.playerId) {
+                    console.log(`[CLEANUP] Removing slot with undefined playerId: ${pid} in room ${roomCode}`);
+                    delete playerInfo[roomCode][pid];
+                }
+            }
+        }
+
         // --- Ensure playerId is unique in this room ---
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
@@ -473,6 +483,13 @@ io.on('connection', (socket) => {
                 if (info.playerId === playerId) {
                     info.disconnected = true;
                     info.disconnectedAt = Date.now();
+                }
+            }
+            // --- CLEANUP: Remove slots with undefined playerId on disconnect ---
+            for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
+                if (!info.playerId) {
+                    console.log(`[CLEANUP] Removing slot with undefined playerId on disconnect: ${sid} in room ${roomCode}`);
+                    delete playerInfo[roomCode][sid];
                 }
             }
             // Remove socket id from rooms, but keep playerInfo slot
