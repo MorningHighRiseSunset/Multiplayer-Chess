@@ -26,6 +26,8 @@ app.use(cors({
 }));
 
 const io = new Server(server, {
+  pingTimeout: 30000,      // Wait 30 seconds before disconnecting inactive clients
+  pingInterval: 10000,     // Send a ping every 10 seconds
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
