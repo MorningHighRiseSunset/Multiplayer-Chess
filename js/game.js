@@ -359,6 +359,8 @@ function isSquareAttacked(r, c, b, color) {
 
 function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
   const moves = [];
+  const piece = b[r][c];
+  if (!piece) return moves;
   for (let tr = 0; tr < 8; tr++) for (let tc = 0; tc < 8; tc++) {
     if ((r !== tr || c !== tc) && isLegalMove(r, c, tr, tc, b, turn, castling, enPassant)) {
       // Simulate move and check for self-check
@@ -372,19 +374,27 @@ function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
       b2[r][c] = null;
       // Handle castling
       if (getType(movedPiece) === "K" && Math.abs(tc - c) === 2) {
+        // King-side
         if (tc > c) {
           b2[r][5] = b2[r][7];
           b2[r][7] = null;
-        } else {
+        } else { // Queen-side
           b2[r][3] = b2[r][0];
           b2[r][0] = null;
         }
       }
-      // Find king
-      let kingR = -1, kingC = -1;
-      for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
-        if (b2[i][j] === (turn + "K")) { kingR = i; kingC = j; }
+      // Find king position after move
+      let kingR, kingC;
+      if (getType(movedPiece) === "K") {
+        kingR = tr;
+        kingC = tc;
+      } else {
+        for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+          if (b2[i][j] === (turn + "K")) { kingR = i; kingC = j; }
+        }
       }
+      if (kingR === undefined || kingC === undefined) continue; // Defensive: skip if king not found
+      // Check if king is in check after move
       let inCheck = false;
       for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
         if (b2[i][j] && getColor(b2[i][j]) !== turn) {
