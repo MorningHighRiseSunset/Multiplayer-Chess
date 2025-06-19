@@ -551,10 +551,8 @@ function renderBoard() {
       checkPos = getKingPosition(checkColor, board);
     }
   }
-  // Loop in display order (white: 0-7, black: 7-0)
   for (let displayR = 0; displayR < 8; displayR++) {
     for (let displayC = 0; displayC < 8; displayC++) {
-      // Map display coordinates to board coordinates
       let r = myColor === "white" ? displayR : 7 - displayR;
       let c = myColor === "white" ? displayC : 7 - displayC;
       const sq = document.createElement('div');
@@ -566,32 +564,34 @@ function renderBoard() {
         sq.textContent = pieceUnicode[piece] || "";
         sq.style.color = piece[0] === "b" ? "#222" : "#fff";
       }
-      // Highlight selected
       if (selected && selected[0] == r && selected[1] == c) {
         sq.style.outline = "3px solid #ffe082";
         sq.style.zIndex = 2;
       }
-      // Highlight legal moves
       if (Array.isArray(legalMoves) && legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
         sq.style.background = "#ffe082";
         sq.style.cursor = "pointer";
       }
-      // Highlight last move
       if (lastMove && (
         (lastMove.from[0] === r && lastMove.from[1] === c) ||
         (lastMove.to[0] === r && lastMove.to[1] === c)
       )) {
         sq.style.background = "#ffd54f";
       }
-      // Highlight pre-move
       if (preMove && (
         (preMove.from[0] === r && preMove.from[1] === c) ||
         (preMove.to[0] === r && preMove.to[1] === c)
       )) {
         sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
       }
-      // Highlight king in check
-      if (Array.isArray(checkPos) && r === checkPos[0] && c === checkPos[1]) {
+      // SAFER: Only highlight if checkPos is a valid array of length 2
+      if (
+        Array.isArray(checkPos) &&
+        checkPos.length === 2 &&
+        typeof checkPos[0] === "number" &&
+        typeof checkPos[1] === "number" &&
+        r === checkPos[0] && c === checkPos[1]
+      ) {
         sq.style.background = "#e53935";
         sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
       }
