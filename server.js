@@ -607,7 +607,7 @@ io.on('connection', (socket) => {
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
                     await deleteGame(roomCode);
-                }, 2 * 60 * 1000);
+                }, 90 * 60 * 1000); // 1.5 hours
             }
         }
     });
