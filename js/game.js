@@ -540,64 +540,92 @@ function checkDrawConditions() {
   return false;
 }
 
+function requestGameState() {
+  socket.emit('joinRoom', { roomCode, playerId }, (res) => {
+    if (res && res.gameState) {
+      updateFromServer(res.gameState);
+      statusElem.textContent = "Board auto-recovered!";
+    } else if (res && res.error) {
+      statusElem.textContent = res.error;
+    } else {
+      statusElem.textContent = "Unable to recover board. Please refresh.";
+    }
+  });
+}
+
 // --- Render board with last move highlight, pre-move highlight, and check highlight ---
 function renderBoard() {
-  const board = gameState.board;
-  boardElem.innerHTML = "";
-  let checkColor = null, checkPos = null;
-  if (gameState.status !== "checkmate" && gameState.status !== "stalemate" && !gameOver) {
-    if (isKingInCheck(gameState.turn, board, gameState.castling, gameState.enPassant)) {
-      checkColor = gameState.turn;
-      checkPos = getKingPosition(checkColor, board);
+  try {
+    const board = gameState.board;
+    boardElem.innerHTML = "";
+
+    // Defensive: Check for missing king (board corruption)
+    const whiteKing = getKingPosition('w', board);
+    const blackKing = getKingPosition('b', board);
+    if (!whiteKing || !blackKing) {
+      statusElem.textContent = "Board error detected. Attempting auto-recovery...";
+      requestGameState();
+      return;
     }
-  }
-  for (let displayR = 0; displayR < 8; displayR++) {
-    for (let displayC = 0; displayC < 8; displayC++) {
-      let r = myColor === "white" ? displayR : 7 - displayR;
-      let c = myColor === "white" ? displayC : 7 - displayC;
-      const sq = document.createElement('div');
-      sq.className = 'square ' + ((displayR + displayC) % 2 ? 'black' : 'white');
-      const piece = board[r][c];
-      sq.dataset.r = r;
-      sq.dataset.c = c;
-      if (piece) {
-        sq.textContent = pieceUnicode[piece] || "";
-        sq.style.color = piece[0] === "b" ? "#222" : "#fff";
+
+    let checkColor = null, checkPos = null;
+    if (gameState.status !== "checkmate" && gameState.status !== "stalemate" && !gameOver) {
+      if (isKingInCheck(gameState.turn, board, gameState.castling, gameState.enPassant)) {
+        checkColor = gameState.turn;
+        checkPos = getKingPosition(checkColor, board);
       }
-      if (selected && selected[0] == r && selected[1] == c) {
-        sq.style.outline = "3px solid #ffe082";
-        sq.style.zIndex = 2;
-      }
-      if (Array.isArray(legalMoves) && legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
-        sq.style.background = "#ffe082";
-        sq.style.cursor = "pointer";
-      }
-      if (lastMove && (
-        (lastMove.from[0] === r && lastMove.from[1] === c) ||
-        (lastMove.to[0] === r && lastMove.to[1] === c)
-      )) {
-        sq.style.background = "#ffd54f";
-      }
-      if (preMove && (
-        (preMove.from[0] === r && preMove.from[1] === c) ||
-        (preMove.to[0] === r && preMove.to[1] === c)
-      )) {
-        sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
-      }
-      // SAFER: Only highlight if checkPos is a valid array of length 2
-      if (
-        Array.isArray(checkPos) &&
-        checkPos.length === 2 &&
-        typeof checkPos[0] === "number" &&
-        typeof checkPos[1] === "number" &&
-        r === checkPos[0] && c === checkPos[1]
-      ) {
-        sq.style.background = "#e53935";
-        sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
-      }
-      sq.onclick = () => handleSquareClick(r, c);
-      boardElem.appendChild(sq);
     }
+    for (let displayR = 0; displayR < 8; displayR++) {
+      for (let displayC = 0; displayC < 8; displayC++) {
+        let r = myColor === "white" ? displayR : 7 - displayR;
+        let c = myColor === "white" ? displayC : 7 - displayC;
+        const sq = document.createElement('div');
+        sq.className = 'square ' + ((displayR + displayC) % 2 ? 'black' : 'white');
+        const piece = board[r][c];
+        sq.dataset.r = r;
+        sq.dataset.c = c;
+        if (piece) {
+          sq.textContent = pieceUnicode[piece] || "";
+          sq.style.color = piece[0] === "b" ? "#222" : "#fff";
+        }
+        if (selected && selected[0] == r && selected[1] == c) {
+          sq.style.outline = "3px solid #ffe082";
+          sq.style.zIndex = 2;
+        }
+        if (Array.isArray(legalMoves) && legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
+          sq.style.background = "#ffe082";
+          sq.style.cursor = "pointer";
+        }
+        if (lastMove && (
+          (lastMove.from[0] === r && lastMove.from[1] === c) ||
+          (lastMove.to[0] === r && lastMove.to[1] === c)
+        )) {
+          sq.style.background = "#ffd54f";
+        }
+        if (preMove && (
+          (preMove.from[0] === r && preMove.from[1] === c) ||
+          (preMove.to[0] === r && preMove.to[1] === c)
+        )) {
+          sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
+        }
+        if (
+          Array.isArray(checkPos) &&
+          checkPos.length === 2 &&
+          typeof checkPos[0] === "number" &&
+          typeof checkPos[1] === "number" &&
+          r === checkPos[0] && c === checkPos[1]
+        ) {
+          sq.style.background = "#e53935";
+          sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
+        }
+        sq.onclick = () => handleSquareClick(r, c);
+        boardElem.appendChild(sq);
+      }
+    }
+  } catch (err) {
+    console.error("renderBoard error:", err);
+    statusElem.textContent = "Board error detected. Attempting auto-recovery...";
+    requestGameState();
   }
 }
 
