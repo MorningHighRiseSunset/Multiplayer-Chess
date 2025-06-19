@@ -834,7 +834,13 @@ function updateFromServer(newState) {
 
 function checkGameOver() {
   if (gameState.status === "checkmate") {
-    statusElem.textContent = "Checkmate! " + (myTurn ? "You lose." : "You win!");
+    // Determine winner based on whose turn it is (the player who just moved delivered mate)
+    const winnerColor = (gameState.turn === "w") ? "black" : "white";
+    if (myColor === winnerColor) {
+      statusElem.textContent = "Checkmate! You win!";
+    } else {
+      statusElem.textContent = "Checkmate! You lose.";
+    }
     gameOver = true;
     showRematchBtn();
   } else if (gameState.status === "stalemate") {
