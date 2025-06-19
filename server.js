@@ -5,6 +5,26 @@ const path = require('path');
 const cors = require('cors');
 const { randomUUID } = require('crypto');
 
+// --- Redis Setup ---
+const { createClient } = require('redis');
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const redis = createClient({ url: redisUrl });
+redis.connect().then(() => {
+  console.log('Connected to Redis');
+}).catch(console.error);
+
+// --- Redis Game State Helpers ---
+async function saveGame(roomCode, gameState) {
+  await redis.set(`game:${roomCode}`, JSON.stringify(gameState), { EX: 60 * 60 }); // 1 hour expiry
+}
+async function loadGame(roomCode) {
+  const data = await redis.get(`game:${roomCode}`);
+  return data ? JSON.parse(data) : null;
+}
+async function deleteGame(roomCode) {
+  await redis.del(`game:${roomCode}`);
+}
+
 const app = express();
 const server = http.createServer(app);
 
@@ -26,8 +46,8 @@ app.use(cors({
 }));
 
 const io = new Server(server, {
-  pingTimeout: 30000,      // Wait 30 seconds before disconnecting inactive clients
-  pingInterval: 10000,     // Send a ping every 10 seconds
+  pingTimeout: 30000,
+  pingInterval: 10000,
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
@@ -267,8 +287,8 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn, castling, enPassant) {
 io.on('connection', (socket) => {
     console.log(`[SOCKET] Connected: ${socket.id}`);
 
-    // --- JOIN ROOM WITH RECONNECTION SUPPORT ---
-    socket.on('joinRoom', (data, callback) => {
+    // --- JOIN ROOM WITH REDIS GAME LOAD ---
+    socket.on('joinRoom', async (data, callback) => {
         let roomCode, playerId;
         if (typeof data === "object") {
             roomCode = data.roomCode || data.room;
@@ -293,21 +313,19 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // --- CLEANUP: Remove any slots with undefined playerId (ghosts from creator disconnect) ---
+        // Remove ghost slots
         if (playerInfo[roomCode]) {
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
                 if (!info.playerId) {
-                    console.log(`[CLEANUP] Hey, this is a ghost socket (${pid}) in room ${roomCode} and NOT a real player, so this shouldn't be taking up a slot in the room. Removing ghost slot.`);
                     delete playerInfo[roomCode][pid];
                 }
             }
         }
 
-        // --- Ensure playerId is unique in this room ---
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
 
-        // If this playerId is already present and active in this room, force a new playerId
+        // Prevent duplicate playerId
         let duplicate = false;
         for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
             if (info.playerId === playerId && !info.disconnected) {
@@ -316,12 +334,10 @@ io.on('connection', (socket) => {
             }
         }
         if (duplicate) {
-            const oldPlayerId = playerId;
             playerId = randomUUID();
-            console.log(`[JOIN] Duplicate playerId detected (${oldPlayerId}) in room ${roomCode}. Assigned new playerId: ${playerId}`);
         }
 
-        // Try to find existing slot for this playerId
+        // Find or assign player slot
         let playerSlot = null;
         for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
             if (info.playerId === playerId) {
@@ -329,44 +345,42 @@ io.on('connection', (socket) => {
                 break;
             }
         }
-        // Remove any disconnected slots that have expired
+        // Remove expired disconnected slots
         const now = Date.now();
-        const gracePeriod = 2 * 60 * 1000; // 2 minutes
+        const gracePeriod = 2 * 60 * 1000;
         for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
             if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
-                console.log(`[CLEANUP] Removing expired disconnected slot: ${pid} in room ${roomCode}`);
                 delete playerInfo[roomCode][pid];
             }
         }
-        // Only count slots with a valid playerId
         const realPlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId).length;
         if (!playerSlot) {
             if (realPlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
                 }
-                console.log(`[JOIN] Room is full: ${roomCode} by ${socket.id}`);
                 return;
             }
             playerSlot = socket.id;
             playerInfo[roomCode][playerSlot] = { color: null, ready: false, playerId };
-            console.log(`[JOIN] Assigned new slot for ${socket.id} as ${playerSlot} in room ${roomCode}`);
         }
-        // Update playerSockets mapping
         playerSockets[playerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
-        // Remove old socket id from rooms if present
         rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-        // Add new socket id
         if (!rooms[roomCode].includes(socket.id)) rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
         socket.playerId = playerId;
-        // Mark as reconnected
         if (playerInfo[roomCode][playerSlot]) {
             playerInfo[roomCode][playerSlot].disconnected = false;
             playerInfo[roomCode][playerSlot].disconnectedAt = null;
         }
-        // Send current game state if available
+
+        // --- Load game state from Redis ---
+        const redisGame = await loadGame(roomCode);
+        if (redisGame) {
+            games[roomCode] = redisGame;
+        }
+
         if (typeof callback === "function") {
             callback({ roomCode, gameState: games[roomCode], playerId });
         }
@@ -375,12 +389,10 @@ io.on('connection', (socket) => {
         if (games[roomCode]) {
             socket.emit('move', games[roomCode]);
         }
-        // Notify opponent if this was a reconnection
         socket.to(roomCode).emit('opponentReconnected');
-        console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}`);
     });
 
-    socket.on('createRoom', (callback) => {
+    socket.on('createRoom', async (callback) => {
         let roomCode;
         do {
             roomCode = Math.random().toString(36).substr(2, 6).toUpperCase();
@@ -399,12 +411,12 @@ io.on('connection', (socket) => {
             history: [],
             status: null
         };
+        await saveGame(roomCode, games[roomCode]);
         if (typeof callback === "function") {
             callback({ roomCode });
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        console.log(`[CREATE] Room created: ${roomCode} by ${socket.id}`);
     });
 
     socket.on('pickColor', ({ room, color }) => {
@@ -414,7 +426,6 @@ io.on('connection', (socket) => {
         playerInfo[room][socket.id].ready = false;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
-        console.log(`[COLOR] ${socket.id} picked ${color} in room ${room}`);
     });
 
     socket.on('playerReady', ({ room, color }) => {
@@ -448,7 +459,6 @@ io.on('connection', (socket) => {
                 roles[sockets[1]] = 'Player 2';
             }
             io.to(room).emit('startGame', { colorAssignments, firstTurn, roles });
-            console.log(`[START] Game started in room ${room}`);
         }
     });
 
@@ -456,12 +466,12 @@ io.on('connection', (socket) => {
         if (rooms[room]) {
             rooms[room] = rooms[room].filter(id => id !== socket.id);
             if (rooms[room].length === 0) {
-                roomDeleteTimeouts[room] = setTimeout(() => {
+                roomDeleteTimeouts[room] = setTimeout(async () => {
                     delete rooms[room];
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
                     delete games[room];
-                    console.log(`[CLEANUP] Room ${room} deleted after last player left.`);
+                    await deleteGame(room);
                 }, 10000);
             } else {
                 if (playerInfo[room]) delete playerInfo[room][socket.id];
@@ -469,15 +479,14 @@ io.on('connection', (socket) => {
             }
         }
         socket.leave(room);
-        console.log(`[LEAVE] ${socket.id} left room ${room}`);
     });
 
     socket.on('getRoomPlayers', (room) => {
         broadcastRoomPlayers(room);
     });
 
-    // --- MAIN MOVE HANDLER ---
-    socket.on('move', ({ move, roomCode }) => {
+    // --- MAIN MOVE HANDLER WITH REDIS SAVE ---
+    socket.on('move', async ({ move, roomCode }) => {
         const game = games[roomCode];
         if (!game || game.status) return;
 
@@ -557,11 +566,10 @@ io.on('connection', (socket) => {
             game.status = "stalemate";
         }
 
+        await saveGame(roomCode, game);
         io.to(roomCode).emit('move', game);
-        console.log(`[MOVE] ${color} moved in room ${roomCode}: ${JSON.stringify(move)}`);
     });
 
-    // --- CHAT HANDLER ---
     socket.on('chatMessage', ({ room, msg }) => {
         let sender = "Player";
         if (playerInfo[room] && playerInfo[room][socket.id]) {
@@ -570,10 +578,8 @@ io.on('connection', (socket) => {
                 : "Player";
         }
         io.to(room).emit('chatMessage', { sender, msg });
-        console.log(`[CHAT] ${sender} in room ${room}: ${msg}`);
     });
 
-    // --- DISCONNECT HANDLER WITH RECONNECT SUPPORT ---
     socket.on('disconnect', () => {
         const roomCode = socket.roomCode;
         const playerId = socket.playerId;
@@ -589,23 +595,21 @@ io.on('connection', (socket) => {
             }
             for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
                 if (!info.playerId) {
-                    console.log(`[CLEANUP] Removing slot with undefined playerId on disconnect: ${sid} in room ${roomCode}`);
                     delete playerInfo[roomCode][sid];
                 }
             }
             rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
             socket.to(roomCode).emit('opponentDisconnected');
             if (rooms[roomCode].length === 0) {
-                roomDeleteTimeouts[roomCode] = setTimeout(() => {
+                roomDeleteTimeouts[roomCode] = setTimeout(async () => {
                     delete rooms[roomCode];
                     delete playerInfo[roomCode];
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
-                    console.log(`[CLEANUP] Room ${roomCode} deleted after disconnect timeout.`);
+                    await deleteGame(roomCode);
                 }, 2 * 60 * 1000);
             }
         }
-        console.log(`[SOCKET] Disconnected: ${socket.id} (playerId: ${playerId})`);
     });
 });
 
