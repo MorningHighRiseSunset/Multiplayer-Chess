@@ -591,7 +591,7 @@ function renderBoard() {
         sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
       }
       // Highlight king in check
-      if (checkPos && r === checkPos[0] && c === checkPos[1]) {
+      if (Array.isArray(checkPos) && r === checkPos[0] && c === checkPos[1]) {
         sq.style.background = "#e53935";
         sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
       }
