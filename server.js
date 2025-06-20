@@ -15,13 +15,16 @@ redis.connect().then(() => {
 
 // --- Redis Game State Helpers ---
 async function saveGame(roomCode, gameState) {
+  console.log(`[REDIS] Saving game for room ${roomCode}`);
   await redis.set(`game:${roomCode}`, JSON.stringify(gameState), { EX: 60 * 60 }); // 1 hour expiry
 }
 async function loadGame(roomCode) {
+  console.log(`[REDIS] Loading game for room ${roomCode}`);
   const data = await redis.get(`game:${roomCode}`);
   return data ? JSON.parse(data) : null;
 }
 async function deleteGame(roomCode) {
+  console.log(`[REDIS] Deleting game for room ${roomCode}`);
   await redis.del(`game:${roomCode}`);
 }
 
@@ -359,6 +362,7 @@ io.on('connection', (socket) => {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
                 }
+                console.log(`[JOIN] Room ${roomCode} is full. ${socket.id} denied.`);
                 return;
             }
             playerSlot = socket.id;
@@ -379,6 +383,7 @@ io.on('connection', (socket) => {
         const redisGame = await loadGame(roomCode);
         if (redisGame) {
             games[roomCode] = redisGame;
+            console.log(`[GAME] Loaded existing game for room ${roomCode}`);
         }
 
         if (typeof callback === "function") {
@@ -390,6 +395,7 @@ io.on('connection', (socket) => {
             socket.emit('move', games[roomCode]);
         }
         socket.to(roomCode).emit('opponentReconnected');
+        console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}`);
     });
 
     socket.on('createRoom', async (callback) => {
@@ -417,6 +423,7 @@ io.on('connection', (socket) => {
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
+        console.log(`[ROOM] Created new room: ${roomCode} by ${socket.id}`);
     });
 
     socket.on('pickColor', ({ room, color }) => {
@@ -426,6 +433,7 @@ io.on('connection', (socket) => {
         playerInfo[room][socket.id].ready = false;
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
+        console.log(`[ROOM] ${socket.id} picked color ${color} in room ${room}`);
     });
 
     socket.on('playerReady', ({ room, color }) => {
@@ -459,6 +467,7 @@ io.on('connection', (socket) => {
                 roles[sockets[1]] = 'Player 2';
             }
             io.to(room).emit('startGame', { colorAssignments, firstTurn, roles });
+            console.log(`[ROOM] Both players ready in room ${room}. Game starting.`);
         }
     });
 
@@ -469,6 +478,7 @@ io.on('connection', (socket) => {
 
     // --- In leaveRoom handler ---
     socket.on('leaveRoom', ({ room }) => {
+        console.log(`[ROOM] ${socket.id} leaving room ${room}`);
         if (rooms[room]) {
             rooms[room] = rooms[room].filter(id => id !== socket.id);
             if (playerInfo[room]) delete playerInfo[room][socket.id];
@@ -476,7 +486,9 @@ io.on('connection', (socket) => {
 
             // Only schedule deletion if game is over and room is empty
             if (rooms[room].length === 0 && isGameOver(room)) {
+                console.log(`[ROOM] Scheduling deletion of room ${room} in 2 hours (game over)`);
                 roomDeleteTimeouts[room] = setTimeout(async () => {
+                    console.log(`[ROOM] Deleting room ${room} (timeout reached, game over)`);
                     delete rooms[room];
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
@@ -494,8 +506,12 @@ io.on('connection', (socket) => {
 
     // --- MAIN MOVE HANDLER WITH REDIS SAVE ---
     socket.on('move', async ({ move, roomCode }) => {
+        console.log(`[MOVE] ${socket.id} in room ${roomCode} is making a move:`, move);
         const game = games[roomCode];
-        if (!game || game.status) return;
+        if (!game || game.status) {
+            console.log(`[MOVE] Move rejected: No game or game over in room ${roomCode}`);
+            return;
+        }
 
         const board = game.board;
         const turn = game.turn;
@@ -569,12 +585,15 @@ io.on('connection', (socket) => {
         const oppCastling = getCastlingRights(game, oppColor);
         if (isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor, oppCastling, game.enPassant)) {
             game.status = "checkmate";
+            console.log(`[GAME] Game over by checkmate in room ${roomCode}`);
         } else if (!isInCheck(game.board, oppColor) && !hasLegalMoves(game.board, oppColor, oppCastling, game.enPassant)) {
             game.status = "stalemate";
+            console.log(`[GAME] Game over by stalemate in room ${roomCode}`);
         }
 
         await saveGame(roomCode, game);
         io.to(roomCode).emit('move', game);
+        console.log(`[MOVE] Move processed and broadcast for room ${roomCode}`);
     });
 
     socket.on('chatMessage', ({ room, msg }) => {
@@ -585,10 +604,12 @@ io.on('connection', (socket) => {
                 : "Player";
         }
         io.to(room).emit('chatMessage', { sender, msg });
+        console.log(`[CHAT] ${sender} in room ${room}: ${msg}`);
     });
 
     // --- disconnect handler ---
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+        console.log(`[SOCKET] Disconnected: ${socket.id} (reason: ${reason})`);
         for (const roomCode in rooms) {
             if (rooms[roomCode].includes(socket.id)) {
                 rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
@@ -597,7 +618,9 @@ io.on('connection', (socket) => {
 
                 // Only schedule deletion if game is over and room is empty
                 if (rooms[roomCode].length === 0 && isGameOver(roomCode)) {
+                    console.log(`[ROOM] Scheduling deletion of room ${roomCode} in 2 hours (game over, all sockets gone)`);
                     roomDeleteTimeouts[roomCode] = setTimeout(async () => {
+                        console.log(`[ROOM] Deleting room ${roomCode} (timeout reached, game over, all sockets gone)`);
                         delete rooms[roomCode];
                         delete playerInfo[roomCode];
                         delete roomDeleteTimeouts[roomCode];
