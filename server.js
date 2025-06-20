@@ -462,20 +462,27 @@ io.on('connection', (socket) => {
         }
     });
 
+    function isGameOver(room) {
+        // Returns true if the game exists and has a status (game over)
+        return games[room] && games[room].status;
+    }
+
+    // --- In leaveRoom handler ---
     socket.on('leaveRoom', ({ room }) => {
         if (rooms[room]) {
             rooms[room] = rooms[room].filter(id => id !== socket.id);
-            if (rooms[room].length === 0) {
+            if (playerInfo[room]) delete playerInfo[room][socket.id];
+            broadcastRoomPlayers(room);
+
+            // Only schedule deletion if game is over and room is empty
+            if (rooms[room].length === 0 && isGameOver(room)) {
                 roomDeleteTimeouts[room] = setTimeout(async () => {
                     delete rooms[room];
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
                     delete games[room];
                     await deleteGame(room);
-                }, 10000);
-            } else {
-                if (playerInfo[room]) delete playerInfo[room][socket.id];
-                broadcastRoomPlayers(room);
+                }, 2 * 60 * 60 * 1000); // 2 hours
             }
         }
         socket.leave(room);
@@ -580,34 +587,24 @@ io.on('connection', (socket) => {
         io.to(room).emit('chatMessage', { sender, msg });
     });
 
+    // --- disconnect handler ---
     socket.on('disconnect', () => {
-        const roomCode = socket.roomCode;
-        const playerId = socket.playerId;
-        if (playerId && playerSockets[playerId]) {
-            playerSockets[playerId].disconnectedAt = Date.now();
-        }
-        if (roomCode && rooms[roomCode]) {
-            for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
-                if (info.playerId === playerId) {
-                    info.disconnected = true;
-                    info.disconnectedAt = Date.now();
+        for (const roomCode in rooms) {
+            if (rooms[roomCode].includes(socket.id)) {
+                rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
+                if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
+                broadcastRoomPlayers(roomCode);
+
+                // Only schedule deletion if game is over and room is empty
+                if (rooms[roomCode].length === 0 && isGameOver(roomCode)) {
+                    roomDeleteTimeouts[roomCode] = setTimeout(async () => {
+                        delete rooms[roomCode];
+                        delete playerInfo[roomCode];
+                        delete roomDeleteTimeouts[roomCode];
+                        delete games[roomCode];
+                        await deleteGame(roomCode);
+                    }, 2 * 60 * 60 * 1000); // 2 hours
                 }
-            }
-            for (const [sid, info] of Object.entries(playerInfo[roomCode] || {})) {
-                if (!info.playerId) {
-                    delete playerInfo[roomCode][sid];
-                }
-            }
-            rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-            socket.to(roomCode).emit('opponentDisconnected');
-            if (rooms[roomCode].length === 0) {
-                roomDeleteTimeouts[roomCode] = setTimeout(async () => {
-                    delete rooms[roomCode];
-                    delete playerInfo[roomCode];
-                    delete roomDeleteTimeouts[roomCode];
-                    delete games[roomCode];
-                    await deleteGame(roomCode);
-                }, 90 * 60 * 1000); // 1.5 hours
             }
         }
     });
