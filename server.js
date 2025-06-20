@@ -1,3 +1,4 @@
+// --- PART 1 ---
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -26,6 +27,19 @@ async function loadGame(roomCode) {
 async function deleteGame(roomCode) {
   console.log(`[REDIS] Deleting game for room ${roomCode}`);
   await redis.del(`game:${roomCode}`);
+}
+async function savePlayerInfo(roomCode, info) {
+  console.log(`[REDIS] Saving playerInfo for room ${roomCode}`);
+  await redis.set(`playerinfo:${roomCode}`, JSON.stringify(info), { EX: 60 * 60 });
+}
+async function loadPlayerInfo(roomCode) {
+  console.log(`[REDIS] Loading playerInfo for room ${roomCode}`);
+  const data = await redis.get(`playerinfo:${roomCode}`);
+  return data ? JSON.parse(data) : null;
+}
+async function deletePlayerInfo(roomCode) {
+  console.log(`[REDIS] Deleting playerInfo for room ${roomCode}`);
+  await redis.del(`playerinfo:${roomCode}`);
 }
 
 const app = express();
@@ -287,10 +301,12 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn, castling, enPassant) {
 
 // --- End Chess Logic ---
 
+// --- PART 2 ---
+
 io.on('connection', (socket) => {
     console.log(`[SOCKET] Connected: ${socket.id}`);
 
-    // --- JOIN ROOM WITH REDIS GAME LOAD ---
+    // --- JOIN ROOM WITH REDIS GAME/PLAYERINFO LOAD & RECREATE ---
     socket.on('joinRoom', async (data, callback) => {
         let roomCode, playerId;
         if (typeof data === "object") {
@@ -308,12 +324,23 @@ io.on('connection', (socket) => {
             return;
         }
         roomCode = roomCode.toUpperCase();
+
+        // PATCH: If room not in memory, but game exists in Redis, recreate room and playerInfo
         if (!rooms[roomCode]) {
-            if (typeof callback === "function") {
-                callback({ error: 'Room not found.' });
+            const redisGame = await loadGame(roomCode);
+            const redisPlayerInfo = await loadPlayerInfo(roomCode);
+            if (redisGame) {
+                rooms[roomCode] = [];
+                games[roomCode] = redisGame;
+                playerInfo[roomCode] = redisPlayerInfo || {};
+                console.log(`[PATCH] Room ${roomCode} recreated from Redis for reconnect`);
+            } else {
+                if (typeof callback === "function") {
+                    callback({ error: 'Room not found.' });
+                }
+                console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
+                return;
             }
-            console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
-            return;
         }
 
         // Remove ghost slots
@@ -379,7 +406,10 @@ io.on('connection', (socket) => {
             playerInfo[roomCode][playerSlot].disconnectedAt = null;
         }
 
-        // --- Load game state from Redis ---
+        // Save playerInfo to Redis
+        await savePlayerInfo(roomCode, playerInfo[roomCode]);
+
+        // --- Load game state from Redis (again, for safety) ---
         const redisGame = await loadGame(roomCode);
         if (redisGame) {
             games[roomCode] = redisGame;
@@ -418,6 +448,7 @@ io.on('connection', (socket) => {
             status: null
         };
         await saveGame(roomCode, games[roomCode]);
+        await savePlayerInfo(roomCode, playerInfo[roomCode]);
         if (typeof callback === "function") {
             callback({ roomCode });
         }
@@ -426,20 +457,22 @@ io.on('connection', (socket) => {
         console.log(`[ROOM] Created new room: ${roomCode} by ${socket.id}`);
     });
 
-    socket.on('pickColor', ({ room, color }) => {
+    socket.on('pickColor', async ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
         if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.id };
         playerInfo[room][socket.id].color = color;
         playerInfo[room][socket.id].ready = false;
+        await savePlayerInfo(room, playerInfo[room]);
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
         console.log(`[ROOM] ${socket.id} picked color ${color} in room ${room}`);
     });
 
-    socket.on('playerReady', ({ room, color }) => {
+    socket.on('playerReady', async ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
         if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.id };
         playerInfo[room][socket.id].ready = true;
+        await savePlayerInfo(room, playerInfo[room]);
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
 
@@ -476,12 +509,12 @@ io.on('connection', (socket) => {
         return games[room] && games[room].status;
     }
 
-    // --- In leaveRoom handler ---
-    socket.on('leaveRoom', ({ room }) => {
+    socket.on('leaveRoom', async ({ room }) => {
         console.log(`[ROOM] ${socket.id} leaving room ${room}`);
         if (rooms[room]) {
             rooms[room] = rooms[room].filter(id => id !== socket.id);
             if (playerInfo[room]) delete playerInfo[room][socket.id];
+            await savePlayerInfo(room, playerInfo[room]);
             broadcastRoomPlayers(room);
 
             // Only schedule deletion if game is over and room is empty
@@ -494,6 +527,7 @@ io.on('connection', (socket) => {
                     delete roomDeleteTimeouts[room];
                     delete games[room];
                     await deleteGame(room);
+                    await deletePlayerInfo(room);
                 }, 2 * 60 * 60 * 1000); // 2 hours
             }
         }
@@ -504,7 +538,6 @@ io.on('connection', (socket) => {
         broadcastRoomPlayers(room);
     });
 
-    // --- MAIN MOVE HANDLER WITH REDIS SAVE ---
     socket.on('move', async ({ move, roomCode }) => {
         console.log(`[MOVE] ${socket.id} in room ${roomCode} is making a move:`, move);
         const game = games[roomCode];
@@ -607,13 +640,13 @@ io.on('connection', (socket) => {
         console.log(`[CHAT] ${sender} in room ${room}: ${msg}`);
     });
 
-    // --- disconnect handler ---
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', async (reason) => {
         console.log(`[SOCKET] Disconnected: ${socket.id} (reason: ${reason})`);
         for (const roomCode in rooms) {
             if (rooms[roomCode].includes(socket.id)) {
                 rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
                 if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
+                await savePlayerInfo(roomCode, playerInfo[roomCode]);
                 broadcastRoomPlayers(roomCode);
 
                 // Only schedule deletion if game is over and room is empty
@@ -626,6 +659,7 @@ io.on('connection', (socket) => {
                         delete roomDeleteTimeouts[roomCode];
                         delete games[roomCode];
                         await deleteGame(roomCode);
+                        await deletePlayerInfo(roomCode);
                     }, 2 * 60 * 60 * 1000); // 2 hours
                 }
             }
