@@ -212,11 +212,18 @@ if (!promotionModal) {
   `;
   document.body.appendChild(promotionModal);
 }
+
 function showPromotionBox(color, cb) {
   promotionCallback = cb;
-  const choices = ['Q','R','B','N'];
-  const container = promotionModal.querySelector('#promotion-choices');
+  // Ensure #promotion-choices exists
+  let container = promotionModal.querySelector('#promotion-choices');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'promotion-choices';
+    promotionModal.appendChild(container);
+  }
   container.innerHTML = '';
+  const choices = ['Q','R','B','N'];
   choices.forEach(type => {
     const btn = document.createElement('button');
     btn.textContent = pieceUnicode[color + type];
