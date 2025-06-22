@@ -963,6 +963,12 @@ socket.on('opponentReconnected', () => {
   statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
 });
 
+setInterval(() => {
+  if (!gameOver) {
+    requestGameState();
+  }
+}, 180000); // 180000 ms = 3 minutes
+
 renderBoard();
 renderMoveHistory();
 statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
