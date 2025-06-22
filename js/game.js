@@ -155,7 +155,7 @@ if (!document.getElementById('resign-btn')) {
 if (!document.getElementById('draw-btn')) {
   const drawBtn = document.createElement('button');
   drawBtn.id = 'draw-btn';
-  drawBtn.textContent = 'Offer Draw';
+  drawBtn.textContent = 'Draw';
   drawBtn.style.background = '#ffe082';
   drawBtn.style.color = '#222';
   drawBtn.style.fontWeight = 'bold';
@@ -168,6 +168,7 @@ if (!document.getElementById('draw-btn')) {
   };
   controlPanel.appendChild(drawBtn);
 }
+
 if (!document.getElementById('rematch-btn')) {
   const rematchBtn = document.createElement('button');
   rematchBtn.id = 'rematch-btn';
@@ -186,6 +187,35 @@ if (!document.getElementById('rematch-btn')) {
   };
   controlPanel.appendChild(rematchBtn);
 }
+
+// --- Add Reconnect Button ---
+if (!document.getElementById('reconnect-btn')) {
+  const reconnectBtn = document.createElement('button');
+  reconnectBtn.id = 'reconnect-btn';
+  reconnectBtn.textContent = 'Reconnect';
+  reconnectBtn.style.background = '#ffe082';
+  reconnectBtn.style.color = '#222';
+  reconnectBtn.style.fontWeight = 'bold';
+  reconnectBtn.style.border = 'none';
+  reconnectBtn.style.borderRadius = '8px';
+  reconnectBtn.style.padding = '8px 18px';
+  reconnectBtn.style.cursor = 'pointer';
+  reconnectBtn.onclick = () => {
+    statusElem.textContent = "Reconnecting...";
+    socket.emit('joinRoom', { roomCode, playerId }, (res) => {
+      if (res && res.gameState) {
+        updateFromServer(res.gameState);
+        statusElem.textContent = "Reconnected!";
+      } else if (res && res.error) {
+        statusElem.textContent = res.error;
+      } else {
+        statusElem.textContent = "Unable to reconnect.";
+      }
+    });
+  };
+  controlPanel.appendChild(reconnectBtn);
+}
+
 function showRematchBtn() {
   const rematchBtn = document.getElementById('rematch-btn');
   if (rematchBtn) rematchBtn.style.display = 'inline-block';
