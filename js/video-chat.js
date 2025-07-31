@@ -8,6 +8,7 @@ class VideoChat {
         this.remoteVideos = new Map();
         this.isVideoEnabled = true;
         this.isAudioEnabled = true;
+        this.placeholderVideoId = null; // Track placeholder video element
         
         this.initialize();
     }
@@ -45,6 +46,9 @@ class VideoChat {
                 });
             }
 
+            // Create placeholder remote video box
+            this.createPlaceholderVideo();
+
             // Join video chat room
             this.socket.emit('joinVideoChat', this.roomCode);
 
@@ -67,6 +71,41 @@ class VideoChat {
             
             this.showError(errorMessage);
             this.updateStatus('Error: ' + errorMessage, 'error');
+        }
+    }
+
+    createPlaceholderVideo() {
+        const videoContainer = document.getElementById('remoteVideos');
+        if (!videoContainer) return;
+
+        // Create placeholder video element
+        const placeholderDiv = document.createElement('div');
+        placeholderDiv.id = 'remote-placeholder';
+        placeholderDiv.className = 'video-wrapper placeholder-video';
+        
+        const placeholderContent = document.createElement('div');
+        placeholderContent.className = 'placeholder-content';
+        placeholderContent.innerHTML = `
+            <div class="placeholder-icon">👤</div>
+            <div class="placeholder-text">Waiting for opponent...</div>
+        `;
+        
+        const label = document.createElement('div');
+        label.className = 'video-label';
+        label.textContent = 'Opponent';
+        
+        placeholderDiv.appendChild(placeholderContent);
+        placeholderDiv.appendChild(label);
+        videoContainer.appendChild(placeholderDiv);
+        
+        this.placeholderVideoId = 'remote-placeholder';
+    }
+
+    removePlaceholderVideo() {
+        const placeholder = document.getElementById(this.placeholderVideoId);
+        if (placeholder) {
+            placeholder.remove();
+            this.placeholderVideoId = null;
         }
     }
 
@@ -279,6 +318,9 @@ class VideoChat {
         const videoContainer = document.getElementById('remoteVideos');
         if (!videoContainer) return;
 
+        // Remove placeholder video if it exists
+        this.removePlaceholderVideo();
+
         // Remove existing video for this participant if it exists
         const existingVideo = document.getElementById(`remote-${participantId}`);
         if (existingVideo) {
@@ -324,6 +366,11 @@ class VideoChat {
             videoElement.parentElement.remove();
         }
         this.remoteVideos.delete(participantId);
+
+        // If no more remote videos, recreate placeholder
+        if (this.remoteVideos.size === 0 && !this.placeholderVideoId) {
+            this.createPlaceholderVideo();
+        }
     }
 
     toggleVideo() {
@@ -374,6 +421,9 @@ class VideoChat {
             }
         });
         this.remoteVideos.clear();
+
+        // Remove placeholder video
+        this.removePlaceholderVideo();
 
         // Notify server
         this.socket.emit('leaveVideoChat', this.roomCode);
