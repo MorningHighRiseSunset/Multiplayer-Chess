@@ -1,0 +1,367 @@
+/* Video Chat Styles */
+
+/* Video Chat Toggle Button */
+.video-chat-toggle-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 20px;
+    box-shadow: 0 4px 16px rgba(52, 152, 219, 0.3);
+    transition: all 0.3s ease;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.video-chat-toggle-btn:hover {
+    background: #2980b9;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+}
+
+.video-chat-toggle-btn:active {
+    transform: scale(0.95);
+}
+
+.video-chat-toggle-btn.active {
+    background: #e74c3c;
+    box-shadow: 0 4px 16px rgba(231, 76, 60, 0.3);
+}
+
+.video-chat-toggle-btn.active:hover {
+    background: #c0392b;
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4);
+}
+.video-chat-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    background: #2c3e50;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.video-chat-container.minimized {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    overflow: hidden;
+}
+
+.video-chat-header {
+    background: #34495e;
+    color: white;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.video-chat-header .minimize-btn {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.video-chat-header .minimize-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.video-content {
+    padding: 16px;
+}
+
+.local-video-container {
+    position: relative;
+    margin-bottom: 12px;
+}
+
+.local-video {
+    width: 100%;
+    height: 180px;
+    background: #1a1a1a;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 2px solid #3498db;
+}
+
+.local-video-label {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.remote-videos {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.video-wrapper {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #1a1a1a;
+}
+
+.remote-video {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border: 2px solid #e74c3c;
+}
+
+.video-label {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.video-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: center;
+}
+
+.video-control-btn {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    min-width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.video-control-btn:hover {
+    background: #2980b9;
+    transform: translateY(-1px);
+}
+
+.video-control-btn:active {
+    transform: translateY(0);
+}
+
+.video-control-btn.danger {
+    background: #e74c3c;
+}
+
+.video-control-btn.danger:hover {
+    background: #c0392b;
+}
+
+.video-control-btn.muted {
+    background: #95a5a6;
+}
+
+.video-control-btn.muted:hover {
+    background: #7f8c8d;
+}
+
+.video-status {
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    color: #bdc3c7;
+    background: #34495e;
+    margin-top: 8px;
+    border-radius: 4px;
+}
+
+.video-status.connected {
+    color: #27ae60;
+    background: rgba(39, 174, 96, 0.1);
+}
+
+.video-status.error {
+    color: #e74c3c;
+    background: rgba(231, 76, 60, 0.1);
+}
+
+.video-status.connecting {
+    color: #f39c12;
+    background: rgba(243, 156, 18, 0.1);
+}
+
+/* Minimized state */
+.video-chat-container.minimized .video-content,
+.video-chat-container.minimized .video-controls,
+.video-chat-container.minimized .video-status {
+    display: none;
+}
+
+.video-chat-container.minimized .video-chat-header {
+    padding: 8px;
+    justify-content: center;
+}
+
+.video-chat-container.minimized .video-chat-header span {
+    display: none;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .video-chat-container {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        width: auto;
+        max-width: 400px;
+        margin: 0 auto;
+    }
+    
+    .local-video {
+        height: 150px;
+    }
+    
+    .remote-video {
+        height: 100px;
+    }
+}
+
+@media (max-width: 480px) {
+    .video-chat-container {
+        top: 5px;
+        right: 5px;
+        left: 5px;
+    }
+    
+    .video-content {
+        padding: 12px;
+    }
+    
+    .local-video {
+        height: 120px;
+    }
+    
+    .remote-video {
+        height: 80px;
+    }
+    
+    .video-controls {
+        gap: 6px;
+    }
+    
+    .video-control-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+        min-width: 35px;
+    }
+}
+
+/* Animation for video elements */
+.video-wrapper {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Scrollbar styling for remote videos */
+.remote-videos::-webkit-scrollbar {
+    width: 4px;
+}
+
+.remote-videos::-webkit-scrollbar-track {
+    background: #34495e;
+    border-radius: 2px;
+}
+
+.remote-videos::-webkit-scrollbar-thumb {
+    background: #7f8c8d;
+    border-radius: 2px;
+}
+
+.remote-videos::-webkit-scrollbar-thumb:hover {
+    background: #95a5a6;
+}
+
+/* Error message styling */
+.video-error {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Loading state */
+.video-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 120px;
+    color: #bdc3c7;
+    font-size: 14px;
+}
+
+.video-loading::after {
+    content: '';
+    width: 20px;
+    height: 20px;
+    border: 2px solid #3498db;
+    border-top: 2px solid transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 8px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+} 

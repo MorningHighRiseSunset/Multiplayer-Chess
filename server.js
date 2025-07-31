@@ -6,6 +6,10 @@ const path = require('path');
 const cors = require('cors');
 const { randomUUID } = require('crypto');
 
+// --- In-Memory Storage for Video Chat ---
+const videoChatRooms = new Map(); // roomCode -> { participants: Set, connections: Map }
+const userVideoInfo = new Map(); // socketId -> { roomCode, userId }
+
 // --- Redis Setup ---
 const { createClient } = require('redis');
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -640,8 +644,122 @@ io.on('connection', (socket) => {
         console.log(`[CHAT] ${sender} in room ${room}: ${msg}`);
     });
 
+    // --- Video Chat Signaling ---
+    socket.on('joinVideoChat', (roomCode) => {
+        console.log(`[VIDEO] ${socket.id} joining video chat for room ${roomCode}`);
+        
+        if (!videoChatRooms.has(roomCode)) {
+            videoChatRooms.set(roomCode, {
+                participants: new Set(),
+                connections: new Map()
+            });
+        }
+        
+        const room = videoChatRooms.get(roomCode);
+        room.participants.add(socket.id);
+        userVideoInfo.set(socket.id, { roomCode, userId: socket.id });
+        
+        // Notify other participants in the room
+        socket.to(roomCode).emit('userJoinedVideoChat', { userId: socket.id });
+        
+        // Send list of existing participants to the new user
+        const participants = Array.from(room.participants).filter(id => id !== socket.id);
+        socket.emit('videoChatParticipants', participants);
+        
+        console.log(`[VIDEO] ${socket.id} joined video chat. Total participants: ${room.participants.size}`);
+    });
+
+    socket.on('leaveVideoChat', (roomCode) => {
+        console.log(`[VIDEO] ${socket.id} leaving video chat for room ${roomCode}`);
+        
+        const room = videoChatRooms.get(roomCode);
+        if (room) {
+            room.participants.delete(socket.id);
+            
+            // Remove all connections involving this user
+            for (const [connectionId, connection] of room.connections) {
+                if (connection.from === socket.id || connection.to === socket.id) {
+                    room.connections.delete(connectionId);
+                }
+            }
+            
+            // Notify other participants
+            socket.to(roomCode).emit('userLeftVideoChat', { userId: socket.id });
+            
+            // Clean up empty rooms
+            if (room.participants.size === 0) {
+                videoChatRooms.delete(roomCode);
+                console.log(`[VIDEO] Deleted empty video chat room ${roomCode}`);
+            }
+        }
+        
+        userVideoInfo.delete(socket.id);
+    });
+
+    socket.on('videoOffer', (data) => {
+        const { to, offer, roomCode } = data;
+        console.log(`[VIDEO] Offer from ${socket.id} to ${to} in room ${roomCode}`);
+        
+        const room = videoChatRooms.get(roomCode);
+        if (room && room.participants.has(to)) {
+            const connectionId = `${socket.id}-${to}`;
+            room.connections.set(connectionId, { from: socket.id, to, offer });
+            socket.to(to).emit('videoOffer', { from: socket.id, offer });
+        }
+    });
+
+    socket.on('videoAnswer', (data) => {
+        const { to, answer, roomCode } = data;
+        console.log(`[VIDEO] Answer from ${socket.id} to ${to} in room ${roomCode}`);
+        
+        const room = videoChatRooms.get(roomCode);
+        if (room && room.participants.has(to)) {
+            const connectionId = `${to}-${socket.id}`;
+            room.connections.set(connectionId, { from: to, to: socket.id, answer });
+            socket.to(to).emit('videoAnswer', { from: socket.id, answer });
+        }
+    });
+
+    socket.on('iceCandidate', (data) => {
+        const { to, candidate, roomCode } = data;
+        console.log(`[VIDEO] ICE candidate from ${socket.id} to ${to} in room ${roomCode}`);
+        
+        const room = videoChatRooms.get(roomCode);
+        if (room && room.participants.has(to)) {
+            socket.to(to).emit('iceCandidate', { from: socket.id, candidate });
+        }
+    });
+
     socket.on('disconnect', async (reason) => {
         console.log(`[SOCKET] Disconnected: ${socket.id} (reason: ${reason})`);
+        
+        // Handle video chat cleanup
+        const videoInfo = userVideoInfo.get(socket.id);
+        if (videoInfo) {
+            const { roomCode } = videoInfo;
+            const room = videoChatRooms.get(roomCode);
+            if (room) {
+                room.participants.delete(socket.id);
+                
+                // Remove all connections involving this user
+                for (const [connectionId, connection] of room.connections) {
+                    if (connection.from === socket.id || connection.to === socket.id) {
+                        room.connections.delete(connectionId);
+                    }
+                }
+                
+                // Notify other participants
+                socket.to(roomCode).emit('userLeftVideoChat', { userId: socket.id });
+                
+                // Clean up empty rooms
+                if (room.participants.size === 0) {
+                    videoChatRooms.delete(roomCode);
+                    console.log(`[VIDEO] Deleted empty video chat room ${roomCode} on disconnect`);
+                }
+            }
+            userVideoInfo.delete(socket.id);
+        }
+        
         for (const roomCode in rooms) {
             if (rooms[roomCode].includes(socket.id)) {
                 rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);

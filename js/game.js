@@ -49,6 +49,9 @@ let animationData = null;
 const boardElem = document.getElementById('chess3d');
 const statusElem = document.getElementById('game-status');
 
+// Video chat instance
+let videoChat = null;
+
 // --- Responsive board styling ---
 function addResponsiveStyles() {
   if (document.getElementById('responsive-chess-style')) return;
@@ -998,4 +1001,37 @@ if (chatForm && chatInput && chatMessages) {
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
+}
+
+// --- Video Chat Integration ---
+const videoChatToggle = document.getElementById('videoChatToggle');
+const videoChatContainer = document.getElementById('videoChatContainer');
+const minimizeVideoBtn = document.getElementById('minimizeVideo');
+
+if (videoChatToggle) {
+  videoChatToggle.addEventListener('click', () => {
+    if (!videoChat) {
+      // Start video chat
+      videoChat = new VideoChat(socket, roomCode);
+      videoChatContainer.style.display = 'block';
+      videoChatToggle.classList.add('active');
+      videoChatToggle.textContent = '📹';
+      videoChatToggle.title = 'Video chat active';
+    } else {
+      // Stop video chat
+      videoChat.leave();
+      videoChat = null;
+      videoChatContainer.style.display = 'none';
+      videoChatToggle.classList.remove('active');
+      videoChatToggle.textContent = '📹';
+      videoChatToggle.title = 'Start Video Chat';
+    }
+  });
+}
+
+if (minimizeVideoBtn) {
+  minimizeVideoBtn.addEventListener('click', () => {
+    videoChatContainer.classList.toggle('minimized');
+    minimizeVideoBtn.textContent = videoChatContainer.classList.contains('minimized') ? '+' : '−';
+  });
 }

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Chess Game</title>
   <link rel="stylesheet" href="css/game.css">
+  <link rel="stylesheet" href="css/video.css">
 </head>
 <body>
   <div class="game-container">
@@ -24,10 +25,37 @@
     </div>
     <a href="lobby.html" id="leave-btn">Leave</a>
   </div>
+
+  <!-- Video Chat Container -->
+  <div id="videoChatContainer" class="video-chat-container" style="display: none;">
+    <div class="video-chat-header">
+      <span>Video Chat</span>
+      <button class="minimize-btn" id="minimizeVideo">−</button>
+    </div>
+    <div class="video-content">
+      <div class="local-video-container">
+        <video id="localVideo" class="local-video" autoplay muted playsinline></video>
+        <div class="local-video-label">You</div>
+      </div>
+      <div id="remoteVideos" class="remote-videos"></div>
+      <div class="video-controls">
+        <button id="toggleVideo" class="video-control-btn" title="Turn off video">🔴</button>
+        <button id="toggleAudio" class="video-control-btn" title="Mute">🔇</button>
+        <button id="leaveVideo" class="video-control-btn danger" title="Leave video chat">❌</button>
+      </div>
+      <div id="videoStatus" class="video-status">Connecting...</div>
+    </div>
+  </div>
+
+  <!-- Video Chat Toggle Button -->
+  <button id="videoChatToggle" class="video-chat-toggle-btn" title="Start Video Chat">
+    📹
+  </button>
   <!-- Modals for promotion and castling (optional, JS will create if missing) -->
   <div id="promotion-modal" style="display:none"></div>
   <div id="castling-modal" style="display:none"></div>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="js/video-chat.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>
