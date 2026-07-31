@@ -19,5 +19,12 @@
       "src": "/(.*)",
       "dest": "/server.js"
     }
+  ],
+  "include": [
+    "css/**",
+    "js/**",
+    "*.html",
+    "server.js",
+    "package.json"
   ]
 }
