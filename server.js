@@ -16,7 +16,9 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const redis = createClient({ url: redisUrl });
 redis.connect().then(() => {
   console.log('Connected to Redis');
-}).catch(console.error);
+}).catch((err) => {
+  console.error('Redis connection failed, continuing without Redis:', err.message);
+});
 
 // --- Redis Game State Helpers ---
 async function saveGame(roomCode, gameState) {
@@ -77,9 +79,6 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-
-// Vercel Analytics middleware
-app.use(analytics());
 
 // Serve static files from css and js directories
 app.use('/css', express.static(path.join(__dirname, 'css')));
@@ -792,6 +791,14 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`Chess server running on http://localhost:${PORT}`);
-});
+// Only listen on PORT if not running on Vercel
+if (process.env.VERCEL !== '1') {
+    server.listen(PORT, () => {
+        console.log(`Chess server running on http://localhost:${PORT}`);
+    });
+} else {
+    console.log('Running on Vercel - server will be handled by platform');
+}
+
+// Export for Vercel
+module.exports = app;
