@@ -43,7 +43,7 @@ if (!playerId) {
 
 // Lobby socket logic
 const socket = io('/', {
-    transports: ['websocket', 'polling']
+    transports: ['polling']
 });
 
 document.getElementById('create-room').addEventListener('click', () => {

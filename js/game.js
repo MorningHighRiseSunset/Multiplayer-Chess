@@ -5,7 +5,9 @@ if (!playerId) {
   localStorage.setItem('playerId', playerId);
 }
 
-const socket = io('/');
+const socket = io('/', {
+    transports: ['polling']
+});
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');
 const myColor = urlParams.get('color') || 'white';

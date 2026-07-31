@@ -68,6 +68,7 @@ app.use(cors({
 const io = new Server(server, {
   pingTimeout: 30000,
   pingInterval: 10000,
+  transports: ['polling'],
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],

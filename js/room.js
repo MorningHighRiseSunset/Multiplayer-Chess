@@ -46,7 +46,9 @@ const params = new URLSearchParams(window.location.search);
 const roomCode = params.get('room');
 console.log('[room.js] Loaded room page with code:', roomCode);
 
-const socket = io('/');
+const socket = io('/', {
+    transports: ['polling']
+});
 
 // Clear previous color pick if entering a new room
 const lastRoom = sessionStorage.getItem('lastRoomCode');
