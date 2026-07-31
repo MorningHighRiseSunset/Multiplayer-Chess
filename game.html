@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Vercel Analytics -->
-  <script src="https://cdn.vercel-analytics.com/script.js" defer></script>
+  <!-- Vercel Web Analytics -->
+  <script type="module">
+      import { inject } from '/node_modules/@vercel/analytics/dist/index.mjs';
+      inject();
+  </script>
   <title>Chess Game</title>
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/video.css">

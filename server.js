@@ -83,6 +83,8 @@ const PORT = process.env.PORT || 3000;
 // Serve static files from css and js directories
 app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
+// Serve Vercel Analytics from node_modules
+app.use('/node_modules/@vercel/analytics', express.static(path.join(__dirname, 'node_modules/@vercel/analytics')));
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
