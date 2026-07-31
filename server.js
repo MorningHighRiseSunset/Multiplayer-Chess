@@ -78,7 +78,11 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
+// Serve static files from css and js directories
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
 app.use(express.static(__dirname));
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/lobby', (req, res) => res.sendFile(path.join(__dirname, 'lobby.html')));
 app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'room.html')));
