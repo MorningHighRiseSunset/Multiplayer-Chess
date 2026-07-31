@@ -78,6 +78,9 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
+// Vercel Analytics middleware
+app.use(analytics());
+
 // Serve static files from css and js directories
 app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
