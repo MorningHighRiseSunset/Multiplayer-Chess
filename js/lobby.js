@@ -42,7 +42,7 @@ if (!playerId) {
 }
 
 // Lobby socket logic
-const socket = io('https://multiplayer-chess-exdx.onrender.com', {
+const socket = io('/', {
     transports: ['websocket', 'polling']
 });
 

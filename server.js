@@ -50,7 +50,7 @@ const app = express();
 const server = http.createServer(app);
 
 const allowedOrigins = [
-  'https://pvp-chess.netlify.app',
+  'https://multiplayer-chess-lyart.vercel.app',
   'http://127.0.0.1:5500',
   'http://localhost:5500'
 ];
@@ -79,7 +79,7 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(__dirname));
-app.get('/', (req, res) => res.send('Chess multiplayer server is running!'));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/lobby', (req, res) => res.sendFile(path.join(__dirname, 'lobby.html')));
 app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'room.html')));
 app.get('/game', (req, res) => res.sendFile(path.join(__dirname, 'game.html')));
