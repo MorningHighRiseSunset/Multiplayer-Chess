@@ -18,32 +18,24 @@ redis.connect().then(() => {
   console.log('Connected to Redis');
 }).catch(console.error);
 
-// --- Redis Game State Helpers ---
+// --- Redis Game State Helpers (in-memory fallback) ---
 async function saveGame(roomCode, gameState) {
-  console.log(`[REDIS] Saving game for room ${roomCode}`);
-  await redis.set(`game:${roomCode}`, JSON.stringify(gameState), { EX: 60 * 60 }); // 1 hour expiry
+  // Disabled for Vercel
 }
 async function loadGame(roomCode) {
-  console.log(`[REDIS] Loading game for room ${roomCode}`);
-  const data = await redis.get(`game:${roomCode}`);
-  return data ? JSON.parse(data) : null;
+  return null; // Disabled for Vercel
 }
 async function deleteGame(roomCode) {
-  console.log(`[REDIS] Deleting game for room ${roomCode}`);
-  await redis.del(`game:${roomCode}`);
+  // Disabled for Vercel
 }
 async function savePlayerInfo(roomCode, info) {
-  console.log(`[REDIS] Saving playerInfo for room ${roomCode}`);
-  await redis.set(`playerinfo:${roomCode}`, JSON.stringify(info), { EX: 60 * 60 });
+  // Disabled for Vercel
 }
 async function loadPlayerInfo(roomCode) {
-  console.log(`[REDIS] Loading playerInfo for room ${roomCode}`);
-  const data = await redis.get(`playerinfo:${roomCode}`);
-  return data ? JSON.parse(data) : null;
+  return null; // Disabled for Vercel
 }
 async function deletePlayerInfo(roomCode) {
-  console.log(`[REDIS] Deleting playerInfo for room ${roomCode}`);
-  await redis.del(`playerinfo:${roomCode}`);
+  // Disabled for Vercel
 }
 
 const app = express();
@@ -69,6 +61,7 @@ app.use(cors({
 const io = new Server(server, {
   pingTimeout: 30000,
   pingInterval: 10000,
+  transports: ['polling'],
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
@@ -78,8 +71,11 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
+// Serve static files from css and js directories
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
 app.use(express.static(__dirname));
-app.get('/', (req, res) => res.send('Chess multiplayer server is running!'));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/lobby', (req, res) => res.sendFile(path.join(__dirname, 'lobby.html')));
 app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'room.html')));
 app.get('/game', (req, res) => res.sendFile(path.join(__dirname, 'game.html')));
@@ -785,6 +781,12 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`Chess server running on http://localhost:${PORT}`);
-});
+// Export for Vercel
+module.exports = app;
+
+// Only listen on PORT if not running on Vercel
+if (!process.env.VERCEL) {
+    server.listen(PORT, () => {
+        console.log(`Chess server running on http://localhost:${PORT}`);
+    });
+}
