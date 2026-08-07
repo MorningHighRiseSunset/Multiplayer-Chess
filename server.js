@@ -43,6 +43,7 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   'https://pvp-chess.netlify.app',
+  'https://multiplayer-chess-exdx.onrender.com',
   'http://127.0.0.1:5500',
   'http://localhost:5500'
 ];
@@ -61,7 +62,7 @@ app.use(cors({
 const io = new Server(server, {
   pingTimeout: 30000,
   pingInterval: 10000,
-  transports: ['polling'],
+  transports: ['websocket', 'polling'],
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],

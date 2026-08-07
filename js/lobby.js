@@ -46,15 +46,71 @@ const socket = io('https://multiplayer-chess-exdx.onrender.com', {
     transports: ['websocket', 'polling']
 });
 
+const createRoomBtn = document.getElementById('create-room');
+const joinForm = document.getElementById('join-form');
+const statusDiv = document.getElementById('lobby-status');
+
+// Queue for actions that need connection
+let pendingAction = null;
+
+// Handle connection status
+socket.on('connect', () => {
+    console.log('[lobby.js] Connected to server');
+    statusDiv.textContent = '';
+    createRoomBtn.disabled = false;
+    joinForm.querySelector('button').disabled = false;
+    
+    // Execute any pending action
+    if (pendingAction) {
+        console.log('[lobby.js] Executing pending action:', pendingAction.type);
+        if (pendingAction.type === 'create') {
+            createRoomNow();
+        } else if (pendingAction.type === 'join') {
+            joinRoomNow(pendingAction.code);
+        }
+        pendingAction = null;
+    }
+});
+
+socket.on('disconnect', () => {
+    console.log('[lobby.js] Disconnected from server');
+    statusDiv.textContent = 'Disconnected from server. Reconnecting...';
+    createRoomBtn.disabled = true;
+    joinForm.querySelector('button').disabled = true;
+});
+
+socket.on('connect_error', (error) => {
+    console.log('[lobby.js] Connection error:', error);
+    statusDiv.textContent = 'Connecting to server...';
+    createRoomBtn.disabled = true;
+    joinForm.querySelector('button').disabled = true;
+});
+
+// Initial state - disable buttons until connected
+createRoomBtn.disabled = true;
+joinForm.querySelector('button').disabled = true;
+statusDiv.textContent = 'Connecting to server...';
+
 document.getElementById('create-room').addEventListener('click', () => {
     console.log('[lobby.js] Create Room button clicked');
+    
+    if (socket.connected) {
+        createRoomNow();
+    } else {
+        statusDiv.textContent = 'Waiting for connection...';
+        pendingAction = { type: 'create' };
+    }
+});
+
+function createRoomNow() {
+    statusDiv.textContent = 'Creating room...';
     socket.emit('createRoom', ({ roomCode }) => {
         console.log('[lobby.js] Room created with code:', roomCode);
         // Save playerId and last room for use in room.js
         sessionStorage.setItem('lastRoomCode', roomCode);
         window.location.href = `room.html?room=${roomCode}`;
     });
-});
+}
 
 document.getElementById('join-form').addEventListener('submit', function(e) {
     e.preventDefault();
@@ -62,14 +118,26 @@ document.getElementById('join-form').addEventListener('submit', function(e) {
     if (!code) return;
     code = code.toUpperCase(); // Ensure uppercase
     console.log('[lobby.js] Attempting to join room with code:', code);
+    
+    if (socket.connected) {
+        joinRoomNow(code);
+    } else {
+        statusDiv.textContent = 'Waiting for connection...';
+        pendingAction = { type: 'join', code };
+    }
+});
+
+function joinRoomNow(code) {
+    statusDiv.textContent = 'Joining room...';
     // Always send playerId for reconnection logic
     socket.emit('joinRoom', { roomCode: code, playerId }, (res) => {
         console.log('[lobby.js] joinRoom response:', res);
         if (res.error) {
+            statusDiv.textContent = res.error;
             alert(res.error);
         } else {
             sessionStorage.setItem('lastRoomCode', res.roomCode);
             window.location.href = `room.html?room=${res.roomCode}`;
         }
     });
-});
+}
