@@ -1,39 +1,3 @@
-// --- Floating background logic (copied from lobby.js) ---
-const PIECES = ['♔','♕','♖','♗','♘','♙','♚','♛','♜','♝','♞','♟'];
-const TILE_COLORS = ['white', 'black'];
-const BG_COUNT = 10; // Number of floating pieces
-const TILE_COUNT = 8; // Number of floating tiles
-
-function randomBetween(a, b) {
-    return a + Math.random() * (b - a);
-}
-
-const bg = document.querySelector('.floating-bg');
-if (bg) {
-  // Floating chess pieces
-  for (let i = 0; i < BG_COUNT; i++) {
-      const el = document.createElement('div');
-      el.className = 'fg-float';
-      el.textContent = PIECES[Math.floor(Math.random() * PIECES.length)];
-      el.style.left = `${randomBetween(0, 90)}vw`;
-      el.style.top = `${randomBetween(0, 90)}vh`;
-      el.style.fontSize = `${randomBetween(1.5, 3.2)}em`;
-      el.style.animationDuration = `${randomBetween(10, 18)}s`;
-      el.style.animationDelay = `${randomBetween(0, 12)}s`;
-      bg.appendChild(el);
-  }
-  // Floating tiles
-  for (let i = 0; i < TILE_COUNT; i++) {
-      const el = document.createElement('div');
-      el.className = 'fg-float tile ' + TILE_COLORS[i % 2];
-      el.style.left = `${randomBetween(0, 92)}vw`;
-      el.style.top = `${randomBetween(0, 92)}vh`;
-      el.style.animationDuration = `${randomBetween(11, 19)}s`;
-      el.style.animationDelay = `${randomBetween(0, 12)}s`;
-      bg.appendChild(el);
-  }
-}
-
 // --- Persistent playerId for reconnection ---
 let playerId = localStorage.getItem('playerId');
 if (!playerId) {
@@ -70,23 +34,20 @@ const colorButtons = [
 const readyBtn = document.getElementById('ready-btn');
 const leaveBtn = document.getElementById('leave-btn');
 const statusDiv = document.getElementById('room-status');
-const roomCodeDiv = document.getElementById('room-code');
+const copyLinkBtn = document.getElementById('copy-link-btn');
 
 const playerWhiteName = document.getElementById('white-name');
 const playerBlackName = document.getElementById('black-name');
 const playerWhiteStatus = document.getElementById('white-status');
 const playerBlackStatus = document.getElementById('black-status');
 
-// Show room code
-if (roomCodeDiv && roomCode) {
-  roomCodeDiv.textContent = roomCode;
-}
-const copyBtn = document.getElementById('copy-code-btn');
-if (copyBtn && roomCodeDiv) {
-  copyBtn.onclick = () => {
-    navigator.clipboard.writeText(roomCodeDiv.textContent);
-    copyBtn.textContent = "Copied!";
-    setTimeout(() => copyBtn.textContent = "Copy", 1200);
+// Copy invite link
+const inviteLink = window.location.href;
+if (copyLinkBtn) {
+  copyLinkBtn.onclick = () => {
+    navigator.clipboard.writeText(inviteLink);
+    copyLinkBtn.textContent = "Copied!";
+    setTimeout(() => copyLinkBtn.textContent = "Copy Link", 1200);
   };
 }
 
