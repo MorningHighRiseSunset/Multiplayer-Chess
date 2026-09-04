@@ -99,12 +99,12 @@ const playerSockets = {};
 const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
-    // Get actual active socket IDs from playerInfo (only non-disconnected players)
+    // Get actual active socket IDs from playerInfo
     const activeSockets = [];
     const playerInfoForClient = {};
     for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
-        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: disconnected=${info.disconnected}, socketId=${info.socketId}`);
-        if (!info.disconnected && info.socketId) {
+        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: socketId=${info.socketId}`);
+        if (info.socketId) {
             activeSockets.push(info.socketId);
             // Use socketId as key for client compatibility
             playerInfoForClient[info.socketId] = {
@@ -360,6 +360,22 @@ io.on('connection', (socket) => {
             console.log(`[JOIN] Room ${roomCode} already in memory. Current players:`, Object.keys(playerInfo[roomCode]));
         }
 
+        // AGGRESSIVE CLEANUP: Remove all disconnected players immediately
+        if (playerInfo[roomCode]) {
+            const beforeCleanup = Object.keys(playerInfo[roomCode]);
+            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+                if (info.disconnected) {
+                    delete playerInfo[roomCode][pid];
+                    console.log(`[JOIN] Removed disconnected player ${pid} during cleanup`);
+                }
+            }
+            const afterCleanup = Object.keys(playerInfo[roomCode]);
+            if (beforeCleanup.length !== afterCleanup.length) {
+                console.log(`[JOIN] Cleanup removed ${beforeCleanup.length - afterCleanup.length} disconnected players`);
+                await savePlayerInfo(roomCode, playerInfo[roomCode]);
+            }
+        }
+
         // Remove ghost slots and expired disconnected players
         if (playerInfo[roomCode]) {
             const now = Date.now();
@@ -382,21 +398,12 @@ io.on('connection', (socket) => {
         let existingPlayerInfo = playerInfo[roomCode][playerId];
         let isReconnecting = !!existingPlayerInfo;
 
-        // Check if this is a reconnection (player was disconnected)
-        if (isReconnecting && existingPlayerInfo.disconnected) {
-            console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode}`);
-            // Update socket ID for the reconnected player
+        // Since we now immediately remove players on disconnect, reconnection won't happen via this logic
+        // Just treat as new player if playerId exists (shouldn't happen normally)
+        if (isReconnecting) {
+            console.log(`[JOIN] Player ${playerId} already exists in room (likely race condition), treating as reconnection`);
+            // Update socket ID
             existingPlayerInfo.socketId = socket.id;
-            existingPlayerInfo.disconnected = false;
-            existingPlayerInfo.disconnectedAt = null;
-        } else if (isReconnecting && !existingPlayerInfo.disconnected) {
-            // Same playerId but player is still connected - treat as new player (duplicate from localStorage)
-            console.log(`[JOIN] Duplicate playerId detected (same localStorage, player still connected), treating as new player`);
-            isReconnecting = false;
-            existingPlayerInfo = null;
-            // Generate a new unique playerId for this connection
-            playerId = randomUUID();
-            console.log(`[JOIN] Generated new playerId ${playerId} for duplicate connection`);
         }
 
         if (!isReconnecting) {
@@ -793,10 +800,9 @@ io.on('connection', (socket) => {
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
                 if (info.socketId === socket.id) {
                     playerRoomCodes.push(roomCode);
-                    // Mark player as disconnected
-                    info.disconnected = true;
-                    info.disconnectedAt = Date.now();
-                    console.log(`[DISCONNECT] Player ${pid} marked as disconnected in room ${roomCode}`);
+                    // Immediately remove the player instead of marking as disconnected
+                    delete playerInfo[roomCode][pid];
+                    console.log(`[DISCONNECT] Immediately removed player ${pid} from room ${roomCode}`);
                 }
             }
         }
@@ -806,7 +812,7 @@ io.on('connection', (socket) => {
             broadcastRoomPlayers(roomCode);
 
             // Count active players in this room
-            const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => !info.disconnected).length;
+            const activePlayerCount = Object.keys(playerInfo[roomCode]).length;
             
             // Only schedule deletion if game is over and room is empty
             if (activePlayerCount === 0 && isGameOver(roomCode)) {
