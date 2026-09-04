@@ -344,21 +344,6 @@ io.on('connection', (socket) => {
         }
         console.log(`[JOIN] Room ${roomCode} exists in memory. Current players:`, Object.keys(playerInfo[roomCode]));
 
-        // Remove ghost slots and expired disconnected players
-        if (playerInfo[roomCode]) {
-            const now = Date.now();
-            const gracePeriod = 2 * 60 * 1000;
-            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-                if (!info.playerId) {
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Removed ghost slot ${pid} in room ${roomCode}`);
-                } else if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Removed expired disconnected player ${pid} in room ${roomCode}`);
-                }
-            }
-        }
-
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
 
