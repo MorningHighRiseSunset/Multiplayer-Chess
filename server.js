@@ -93,26 +93,27 @@ const initialBoard = [
   ["wR","wN","wB","wQ","wK","wB","wN","wR"]
 ];
 
-const rooms = {};
 const playerInfo = {};
 const games = {};
 const playerSockets = {};
 const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
-    const sockets = rooms[roomCode] || [];
-    // Convert playerInfo (keyed by playerId) to format expected by client
+    // Get actual active socket IDs from playerInfo (only non-disconnected players)
+    const activeSockets = [];
     const playerInfoForClient = {};
     for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
-        // Use socketId as key for client compatibility
-        const clientKey = info.socketId || playerId;
-        playerInfoForClient[clientKey] = {
-            color: info.color,
-            ready: info.ready,
-            playerId: info.playerId
-        };
+        if (!info.disconnected && info.socketId) {
+            activeSockets.push(info.socketId);
+            // Use socketId as key for client compatibility
+            playerInfoForClient[info.socketId] = {
+                color: info.color,
+                ready: info.ready,
+                playerId: info.playerId
+            };
+        }
     }
-    io.to(roomCode).emit('roomPlayers', sockets, playerInfoForClient);
+    io.to(roomCode).emit('roomPlayers', activeSockets, playerInfoForClient);
 }
 
 function clearRoomDeleteTimeout(roomCode) {
@@ -339,11 +340,10 @@ io.on('connection', (socket) => {
         roomCode = roomCode.toUpperCase();
 
         // PATCH: If room not in memory, but game exists in Redis, recreate room and playerInfo
-        if (!rooms[roomCode]) {
+        if (!playerInfo[roomCode]) {
             const redisGame = await loadGame(roomCode);
             const redisPlayerInfo = await loadPlayerInfo(roomCode);
             if (redisGame) {
-                rooms[roomCode] = [];
                 games[roomCode] = redisGame;
                 playerInfo[roomCode] = redisPlayerInfo || {};
                 console.log(`[PATCH] Room ${roomCode} recreated from Redis for reconnect`);
@@ -415,9 +415,6 @@ io.on('connection', (socket) => {
             console.log(`[JOIN] Auto-assigned ${autoColor} to ${socket.id} (playerId: ${playerId}). Active players: ${activePlayerCount}`);
         }
         playerSockets[playerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
-        // Add socket.id to rooms array for socket.io room management
-        rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-        if (!rooms[roomCode].includes(socket.id)) rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
         socket.playerId = playerId;
@@ -449,16 +446,13 @@ io.on('connection', (socket) => {
         let roomCode;
         do {
             roomCode = Math.random().toString(36).substr(2, 6).toUpperCase();
-        } while (rooms[roomCode]);
-        rooms[roomCode] = [];
+        } while (playerInfo[roomCode]);
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
         // Use persistent playerId as key instead of socket.id
         const creatorPlayerId = socket.playerId || socket.id;
         playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
-        // Add socket.id to rooms array
-        rooms[roomCode].push(socket.id);
         socket.playerId = creatorPlayerId;
         playerSockets[creatorPlayerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
         games[roomCode] = {
@@ -537,18 +531,26 @@ io.on('connection', (socket) => {
 
     socket.on('leaveRoom', async ({ room }) => {
         console.log(`[ROOM] ${socket.id} leaving room ${room}`);
-        if (rooms[room]) {
-            rooms[room] = rooms[room].filter(id => id !== socket.id);
-            if (playerInfo[room]) delete playerInfo[room][socket.id];
+        const playerId = socket.playerId || socket.id;
+        if (playerInfo[room]) {
+            // Find and remove the player using playerId
+            for (const [pid, info] of Object.entries(playerInfo[room])) {
+                if (info.playerId === playerId || info.socketId === socket.id) {
+                    delete playerInfo[room][pid];
+                    break;
+                }
+            }
             await savePlayerInfo(room, playerInfo[room]);
             broadcastRoomPlayers(room);
 
+            // Count active players in this room
+            const activePlayerCount = Object.values(playerInfo[room]).filter(info => !info.disconnected).length;
+            
             // Only schedule deletion if game is over and room is empty
-            if (rooms[room].length === 0 && isGameOver(room)) {
+            if (activePlayerCount === 0 && isGameOver(room)) {
                 console.log(`[ROOM] Scheduling deletion of room ${room} in 2 hours (game over)`);
                 roomDeleteTimeouts[room] = setTimeout(async () => {
                     console.log(`[ROOM] Deleting room ${room} (timeout reached, game over)`);
-                    delete rooms[room];
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
                     delete games[room];
@@ -782,32 +784,38 @@ io.on('connection', (socket) => {
             userVideoInfo.delete(socket.id);
         }
         
-        for (const roomCode in rooms) {
-            if (rooms[roomCode].includes(socket.id)) {
-                rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-                // Mark player as disconnected using playerId instead of socket.id
-                const playerId = socket.playerId || socket.id;
-                if (playerInfo[roomCode] && playerInfo[roomCode][playerId]) {
-                    playerInfo[roomCode][playerId].disconnected = true;
-                    playerInfo[roomCode][playerId].disconnectedAt = Date.now();
-                    console.log(`[DISCONNECT] Player ${playerId} marked as disconnected in room ${roomCode}`);
+        // Find all rooms this player is in using playerInfo
+        const playerRoomCodes = [];
+        for (const roomCode in playerInfo) {
+            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+                if (info.socketId === socket.id) {
+                    playerRoomCodes.push(roomCode);
+                    // Mark player as disconnected
+                    info.disconnected = true;
+                    info.disconnectedAt = Date.now();
+                    console.log(`[DISCONNECT] Player ${pid} marked as disconnected in room ${roomCode}`);
                 }
-                await savePlayerInfo(roomCode, playerInfo[roomCode]);
-                broadcastRoomPlayers(roomCode);
+            }
+        }
+        
+        for (const roomCode of playerRoomCodes) {
+            await savePlayerInfo(roomCode, playerInfo[roomCode]);
+            broadcastRoomPlayers(roomCode);
 
-                // Only schedule deletion if game is over and room is empty
-                if (rooms[roomCode].length === 0 && isGameOver(roomCode)) {
-                    console.log(`[ROOM] Scheduling deletion of room ${roomCode} in 2 hours (game over, all sockets gone)`);
-                    roomDeleteTimeouts[roomCode] = setTimeout(async () => {
-                        console.log(`[ROOM] Deleting room ${roomCode} (timeout reached, game over, all sockets gone)`);
-                        delete rooms[roomCode];
-                        delete playerInfo[roomCode];
-                        delete roomDeleteTimeouts[roomCode];
-                        delete games[roomCode];
-                        await deleteGame(roomCode);
-                        await deletePlayerInfo(roomCode);
-                    }, 2 * 60 * 60 * 1000); // 2 hours
-                }
+            // Count active players in this room
+            const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => !info.disconnected).length;
+            
+            // Only schedule deletion if game is over and room is empty
+            if (activePlayerCount === 0 && isGameOver(roomCode)) {
+                console.log(`[ROOM] Scheduling deletion of room ${roomCode} in 2 hours (game over, all sockets gone)`);
+                roomDeleteTimeouts[roomCode] = setTimeout(async () => {
+                    console.log(`[ROOM] Deleting room ${roomCode} (timeout reached, game over, all sockets gone)`);
+                    delete playerInfo[roomCode];
+                    delete roomDeleteTimeouts[roomCode];
+                    delete games[roomCode];
+                    await deleteGame(roomCode);
+                    await deletePlayerInfo(roomCode);
+                }, 2 * 60 * 60 * 1000); // 2 hours
             }
         }
     });
