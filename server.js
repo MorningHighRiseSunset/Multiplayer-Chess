@@ -382,13 +382,24 @@ io.on('connection', (socket) => {
         let existingPlayerInfo = playerInfo[roomCode][playerId];
         let isReconnecting = !!existingPlayerInfo;
 
-        if (isReconnecting) {
+        // Check if this is a reconnection (player was disconnected)
+        if (isReconnecting && existingPlayerInfo.disconnected) {
             console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode}`);
             // Update socket ID for the reconnected player
             existingPlayerInfo.socketId = socket.id;
             existingPlayerInfo.disconnected = false;
             existingPlayerInfo.disconnectedAt = null;
-        } else {
+        } else if (isReconnecting && !existingPlayerInfo.disconnected) {
+            // Same playerId but player is still connected - treat as new player (duplicate from localStorage)
+            console.log(`[JOIN] Duplicate playerId detected (same localStorage, player still connected), treating as new player`);
+            isReconnecting = false;
+            existingPlayerInfo = null;
+            // Generate a new unique playerId for this connection
+            playerId = randomUUID();
+            console.log(`[JOIN] Generated new playerId ${playerId} for duplicate connection`);
+        }
+
+        if (!isReconnecting) {
             // Count only active (non-disconnected) players
             const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId && !info.disconnected).length;
             if (activePlayerCount >= 2) {
@@ -448,6 +459,8 @@ io.on('connection', (socket) => {
         playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
         // Add socket.id to rooms array
         rooms[roomCode].push(socket.id);
+        socket.playerId = creatorPlayerId;
+        playerSockets[creatorPlayerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
