@@ -92,12 +92,12 @@ const playerSockets = {};
 const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
-    // Get actual active socket IDs from playerInfo
+    // Get actual active socket IDs from playerInfo (only non-disconnected)
     const activeSockets = [];
     const playerInfoForClient = {};
     for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
-        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: socketId=${info.socketId}`);
-        if (info.socketId) {
+        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: disconnected=${info.disconnected}, socketId=${info.socketId}`);
+        if (!info.disconnected && info.socketId) {
             activeSockets.push(info.socketId);
             // Use socketId as key for client compatibility
             playerInfoForClient[info.socketId] = {
@@ -344,6 +344,18 @@ io.on('connection', (socket) => {
         }
         console.log(`[JOIN] Room ${roomCode} exists in memory. Current players:`, Object.keys(playerInfo[roomCode]));
 
+        // Remove expired disconnected players
+        if (playerInfo[roomCode]) {
+            const now = Date.now();
+            const gracePeriod = 2 * 60 * 1000;
+            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+                if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
+                    delete playerInfo[roomCode][pid];
+                    console.log(`[JOIN] Removed expired disconnected player ${pid} in room ${roomCode}`);
+                }
+            }
+        }
+
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
 
@@ -351,15 +363,15 @@ io.on('connection', (socket) => {
         let existingPlayerInfo = playerInfo[roomCode][playerId];
         let isReconnecting = !!existingPlayerInfo;
 
-        // Since we now immediately remove players on disconnect, reconnection won't happen via this logic
-        // Just treat as new player if playerId exists (shouldn't happen normally)
         if (isReconnecting) {
-            console.log(`[JOIN] Player ${playerId} already exists in room, treating as reconnection`);
-            // Update socket ID
+            console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode}`);
+            // Update socket ID and mark as connected
             existingPlayerInfo.socketId = socket.id;
+            existingPlayerInfo.disconnected = false;
+            existingPlayerInfo.disconnectedAt = null;
         } else {
-            // New player - check if room is full
-            const activePlayerCount = Object.keys(playerInfo[roomCode]).length;
+            // New player - check if room is full (only count non-disconnected players)
+            const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => !info.disconnected).length;
             if (activePlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
@@ -734,9 +746,10 @@ io.on('connection', (socket) => {
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
                 if (info.socketId === socket.id) {
                     playerRoomCodes.push(roomCode);
-                    // Immediately remove the player instead of marking as disconnected
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[DISCONNECT] Immediately removed player ${pid} from room ${roomCode}`);
+                    // Mark as disconnected instead of immediately removing
+                    info.disconnected = true;
+                    info.disconnectedAt = Date.now();
+                    console.log(`[DISCONNECT] Marked player ${pid} as disconnected in room ${roomCode}`);
                 }
             }
         }
@@ -751,11 +764,14 @@ io.on('connection', (socket) => {
             if (activePlayerCount === 0 && isGameOver(roomCode)) {
                 console.log(`[ROOM] Scheduling deletion of room ${roomCode} in 2 hours (game over, all sockets gone)`);
                 roomDeleteTimeouts[roomCode] = setTimeout(() => {
-                    console.log(`[ROOM] Deleting room ${roomCode} (timeout reached, game over, all sockets gone)`);
+                    console.log(`[ROOM] Deleting room ${room} (timeout reached, game over, all sockets gone)`);
                     delete playerInfo[roomCode];
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
                 }, 2 * 60 * 60 * 1000); // 2 hours
+            } else if (activePlayerCount === 0) {
+                // Don't delete room if game is not over, even if empty
+                console.log(`[ROOM] Room ${roomCode} is empty but game not over, keeping room alive`);
             }
         }
     });
