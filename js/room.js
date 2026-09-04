@@ -57,7 +57,7 @@ let mySocketId = null;
 function updatePlayerIcons(playerList) {
   if (iconPlayer1) iconPlayer1.classList.toggle('active', !!playerList[0]);
   if (iconPlayer2) iconPlayer2.classList.toggle('active', !!playerList[1]);
-  console.log('[room.js] updatePlayerIcons:', playerList);
+  console.log('[room.js] updatePlayerIcons - Player 1 (White):', playerList[0] || 'not connected', 'Player 2 (Black):', playerList[1] || 'not connected');
 }
 
 // Update player status in UI
