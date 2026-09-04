@@ -22,15 +22,13 @@ if (lastRoom !== roomCode) {
 let myColorPick = null;
 let myAssignedColor = null;
 let myRole = null;
+let myAutoColor = null;
 
 // Player icons for presence
 const iconPlayer1 = document.getElementById('icon-player1');
 const iconPlayer2 = document.getElementById('icon-player2');
 
-const colorButtons = [
-  document.getElementById('pick-white'),
-  document.getElementById('pick-black')
-];
+const yourColorSpan = document.getElementById('your-color');
 const readyBtn = document.getElementById('ready-btn');
 const leaveBtn = document.getElementById('leave-btn');
 const statusDiv = document.getElementById('room-status');
@@ -68,10 +66,10 @@ function updatePlayerStatus(playersObj) {
   if (playerBlackStatus) playerBlackStatus.textContent = 'Waiting...';
   Object.values(playersObj).forEach(p => {
     if (p.color === 'white' && playerWhiteStatus) {
-      playerWhiteStatus.textContent = p.ready ? 'Ready' : 'Picked White';
+      playerWhiteStatus.textContent = p.ready ? 'Ready' : 'Joined';
     }
     if (p.color === 'black' && playerBlackStatus) {
-      playerBlackStatus.textContent = p.ready ? 'Ready' : 'Picked Black';
+      playerBlackStatus.textContent = p.ready ? 'Ready' : 'Joined';
     }
   });
   console.log('[room.js] updatePlayerStatus:', playersObj);
@@ -90,47 +88,21 @@ socket.emit('joinRoom', { roomCode, playerId }, (res) => {
 socket.on('connect', () => {
   mySocketId = socket.id;
   console.log('[room.js] Socket connected:', socket.id);
-  // Restore color pick if needed (only if in this room)
-  const storedColor = sessionStorage.getItem('myColorPick');
-  if (storedColor && !myColorPick) {
-    myColorPick = storedColor;
-    socket.emit('pickColor', { room: roomCode, color: myColorPick });
-    console.log('[room.js] Restored color pick:', myColorPick);
-  }
   socket.emit('getRoomPlayers', roomCode);
-});
-
-// Pick color
-colorButtons.forEach(btn => {
-  if (!btn) return;
-  btn.onclick = () => {
-    myColorPick = btn.dataset.color;
-    socket.emit('pickColor', { room: roomCode, color: myColorPick });
-    colorButtons.forEach(b => {
-      b.disabled = true;
-      b.classList.remove('selected');
-    });
-    btn.classList.add('selected');
-    if (statusDiv) statusDiv.textContent = `You picked ${myColorPick.charAt(0).toUpperCase() + myColorPick.slice(1)}`;
-    if (readyBtn) readyBtn.disabled = false;
-    sessionStorage.setItem('myColorPick', myColorPick);
-    console.log('[room.js] Picked color:', myColorPick);
-  };
 });
 
 // Ready button
 if (readyBtn) {
   readyBtn.onclick = () => {
-    myColorPick = myColorPick || sessionStorage.getItem('myColorPick');
-    if (!myColorPick) {
-      if (statusDiv) statusDiv.textContent = "Pick a color first!";
+    // Use auto-assigned color
+    if (!myAutoColor) {
+      if (statusDiv) statusDiv.textContent = "Waiting for color assignment...";
       return;
     }
-    sessionStorage.setItem('myColorPick', myColorPick);
-    socket.emit('playerReady', { room: roomCode, color: myColorPick });
+    socket.emit('playerReady', { room: roomCode, color: myAutoColor });
     readyBtn.disabled = true;
     if (statusDiv) statusDiv.textContent = "Waiting for other player...";
-    console.log('[room.js] Ready as:', myColorPick);
+    console.log('[room.js] Ready as:', myAutoColor);
   };
 }
 
@@ -142,6 +114,7 @@ if (leaveBtn) {
     sessionStorage.removeItem('myRole');
     sessionStorage.removeItem('startFirstTurn');
     sessionStorage.removeItem('myColorPick');
+    sessionStorage.removeItem('myAutoColor');
     window.location.href = 'lobby.html';
     console.log('[room.js] Left room:', roomCode);
   };
@@ -153,6 +126,15 @@ if (leaveBtn) {
 socket.on('roomPlayers', (playerList, playersObj) => {
   updatePlayerIcons(playerList);
   updatePlayerStatus(playersObj);
+  // Update my assigned color
+  if (playersObj[socket.id] && playersObj[socket.id].color) {
+    myAutoColor = playersObj[socket.id].color;
+    sessionStorage.setItem('myAutoColor', myAutoColor);
+    if (yourColorSpan) {
+      yourColorSpan.textContent = `Your color: ${myAutoColor.charAt(0).toUpperCase() + myAutoColor.slice(1)}`;
+    }
+    if (readyBtn) readyBtn.disabled = false;
+  }
   console.log('[room.js] Received roomPlayers:', playerList, playersObj);
 });
 
@@ -164,7 +146,7 @@ socket.on('roomStatus', ({ msg }) => {
 
 // Server tells both to start game
 socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
-  myAssignedColor = colorAssignments ? colorAssignments[socket.id] : null;
+  myAssignedColor = colorAssignments ? colorAssignments[socket.id] : myAutoColor;
   myRole = roles ? roles[socket.id] : null;
   sessionStorage.setItem('myAssignedColor', myAssignedColor);
   sessionStorage.setItem('myRole', myRole);

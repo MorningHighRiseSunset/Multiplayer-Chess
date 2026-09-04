@@ -194,28 +194,15 @@ body, html {
   margin-bottom: 12px;
 }
 
-.color-btn {
-  padding: 7px 20px;
-  border-radius: 8px;
-  border: 1.5px solid #ffe082;
-  background: #333;
+.your-color {
+  font-size: 1.2em;
   color: #ffe082;
   font-weight: bold;
-  font-size: 1em;
-  cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s, color 0.2s;
-  box-shadow: 0 1px 2px #0002;
-}
-.color-btn.selected,
-.color-btn:active {
-  background: #ffe082;
-  color: #222;
-  box-shadow: 0 2px 8px #ffe08244;
-}
-.color-btn:disabled {
+  text-align: center;
+  padding: 8px 16px;
   background: #232b39;
-  color: #b6c2d1;
-  cursor: not-allowed;
+  border-radius: 8px;
+  border: 1.5px solid #ffe082;
 }
 
 .ready-section {

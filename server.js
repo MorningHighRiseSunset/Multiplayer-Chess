@@ -44,6 +44,7 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'https://pvp-chess.netlify.app',
   'https://multiplayer-chess-exdx.onrender.com',
+  'https://multiplayer-chess-tan.vercel.app',
   'http://127.0.0.1:5500',
   'http://localhost:5500'
 ];
@@ -400,7 +401,10 @@ io.on('connection', (socket) => {
                 return;
             }
             playerSlot = socket.id;
-            playerInfo[roomCode][playerSlot] = { color: null, ready: false, playerId };
+            // Auto-assign black to the second player joining
+            const autoColor = realPlayerCount === 0 ? 'white' : 'black';
+            playerInfo[roomCode][playerSlot] = { color: autoColor, ready: false, playerId };
+            console.log(`[JOIN] Auto-assigned ${autoColor} to ${socket.id}`);
         }
         playerSockets[playerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
         rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
@@ -445,6 +449,8 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
+        // Auto-assign white to the creator
+        playerInfo[roomCode][socket.id] = { color: 'white', ready: false, playerId: socket.playerId || socket.id };
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
@@ -462,30 +468,21 @@ io.on('connection', (socket) => {
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        console.log(`[ROOM] Created new room: ${roomCode} by ${socket.id}`);
-    });
-
-    socket.on('pickColor', async ({ room, color }) => {
-        if (!playerInfo[room]) playerInfo[room] = {};
-        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.playerId || socket.id };
-        playerInfo[room][socket.id].color = color;
-        playerInfo[room][socket.id].ready = false;
-        playerInfo[room][socket.id].playerId = socket.playerId || socket.id;
-        await savePlayerInfo(room, playerInfo[room]);
-        broadcastRoomPlayers(room);
-        io.to(room).emit('roomStatus', { msg: `A player picked ${color}` });
-        console.log(`[ROOM] ${socket.id} picked color ${color} in room ${room}`);
+        console.log(`[ROOM] Created new room: ${roomCode} by ${socket.id} (assigned white)`);
     });
 
     socket.on('playerReady', async ({ room, color }) => {
         if (!playerInfo[room]) playerInfo[room] = {};
         if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.playerId || socket.id };
         playerInfo[room][socket.id].ready = true;
-        playerInfo[room][socket.id].color = color; // Ensure color is set
+        // Use auto-assigned color
+        if (!playerInfo[room][socket.id].color) {
+            playerInfo[room][socket.id].color = color;
+        }
         playerInfo[room][socket.id].playerId = socket.playerId || socket.id;
         await savePlayerInfo(room, playerInfo[room]);
         broadcastRoomPlayers(room);
-        io.to(room).emit('roomStatus', { msg: `A player is ready (${color})` });
+        io.to(room).emit('roomStatus', { msg: `A player is ready (${playerInfo[room][socket.id].color})` });
 
         const readyPlayers = Object.values(playerInfo[room]).filter(p => p.ready);
         console.log(`[ROOM] Ready players in room ${room}:`, readyPlayers.length, 'out of', Object.keys(playerInfo[room]).length);
