@@ -365,7 +365,9 @@ io.on('connection', (socket) => {
             // Different socket ID or not disconnected - treat as new player (duplicate from localStorage)
             console.log(`[JOIN] Duplicate playerId detected (different socket or not disconnected), treating as new player`);
             isReconnecting = false;
-            existingPlayerInfo = null;
+            // Delete the old entry to prevent ghost players
+            delete playerInfo[roomCode][playerId];
+            console.log(`[JOIN] Deleted old entry for duplicate playerId ${playerId}`);
             // Generate a new unique playerId for this connection
             playerId = randomUUID();
             console.log(`[JOIN] Generated new playerId ${playerId} for duplicate connection`);
