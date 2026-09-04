@@ -360,13 +360,24 @@ io.on('connection', (socket) => {
             console.log(`[JOIN] Room ${roomCode} already in memory. Current players:`, Object.keys(playerInfo[roomCode]));
         }
 
-        // AGGRESSIVE CLEANUP: Remove ALL players from Redis-loaded room, start fresh
+        // AGGRESSIVE CLEANUP: Clear room except preserve creator info if they're reconnecting
         if (playerInfo[roomCode]) {
             const beforeCleanup = Object.keys(playerInfo[roomCode]);
-            // Clear all players - we'll re-add the creator if they're reconnecting
-            playerInfo[roomCode] = {};
+            const isCreatorReconnecting = playerInfo[roomCode][playerId] && playerInfo[roomCode][playerId].color === 'white';
+            
+            if (isCreatorReconnecting) {
+                // Keep the creator's entry, clear others
+                const creatorInfo = playerInfo[roomCode][playerId];
+                playerInfo[roomCode] = {};
+                playerInfo[roomCode][playerId] = creatorInfo;
+                console.log(`[JOIN] Preserved creator ${playerId}, cleared other players`);
+            } else {
+                // Clear all - it's a new player joining
+                playerInfo[roomCode] = {};
+                console.log(`[JOIN] Cleared all players from room ${roomCode}`);
+            }
+            
             const afterCleanup = Object.keys(playerInfo[roomCode]);
-            console.log(`[JOIN] Cleared all ${beforeCleanup.length} players from room ${roomCode}`);
             await savePlayerInfo(roomCode, playerInfo[roomCode]);
         }
 
