@@ -10,32 +10,25 @@ const { randomUUID } = require('crypto');
 const videoChatRooms = new Map(); // roomCode -> { participants: Set, connections: Map }
 const userVideoInfo = new Map(); // socketId -> { roomCode, userId }
 
-// --- Redis Setup ---
-const { createClient } = require('redis');
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const redis = createClient({ url: redisUrl });
-redis.connect().then(() => {
-  console.log('Connected to Redis');
-}).catch(console.error);
-
-// --- Redis Game State Helpers (in-memory fallback) ---
+// --- Redis DISABLED - using pure in-memory storage ---
+// Redis was causing corruption issues with player data
 async function saveGame(roomCode, gameState) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 async function loadGame(roomCode) {
-  return null; // Disabled for Vercel
+  return null; // Disabled - using in-memory only
 }
 async function deleteGame(roomCode) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 async function savePlayerInfo(roomCode, info) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 async function loadPlayerInfo(roomCode) {
-  return null; // Disabled for Vercel
+  return null; // Disabled - using in-memory only
 }
 async function deletePlayerInfo(roomCode) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 
 const app = express();
@@ -341,24 +334,15 @@ io.on('connection', (socket) => {
         }
         roomCode = roomCode.toUpperCase();
 
-        // PATCH: If room not in memory, but game exists in Redis, recreate room and playerInfo
+        // Check if room exists in memory
         if (!playerInfo[roomCode]) {
-            const redisGame = await loadGame(roomCode);
-            const redisPlayerInfo = await loadPlayerInfo(roomCode);
-            if (redisGame) {
-                games[roomCode] = redisGame;
-                playerInfo[roomCode] = redisPlayerInfo || {};
-                console.log(`[PATCH] Room ${roomCode} recreated from Redis for reconnect. Players in Redis:`, Object.keys(playerInfo[roomCode]));
-            } else {
-                if (typeof callback === "function") {
-                    callback({ error: 'Room not found.' });
-                }
-                console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
-                return;
+            if (typeof callback === "function") {
+                callback({ error: 'Room not found.' });
             }
-        } else {
-            console.log(`[JOIN] Room ${roomCode} already in memory, NOT loading from Redis to prevent corruption. Current players:`, Object.keys(playerInfo[roomCode]));
+            console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
+            return;
         }
+        console.log(`[JOIN] Room ${roomCode} exists in memory. Current players:`, Object.keys(playerInfo[roomCode]));
 
         // Remove ghost slots and expired disconnected players
         if (playerInfo[roomCode]) {
@@ -409,16 +393,6 @@ io.on('connection', (socket) => {
         socket.playerId = playerId;
         console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}, isReconnecting: ${isReconnecting}`);
 
-        // Save playerInfo to Redis
-        await savePlayerInfo(roomCode, playerInfo[roomCode]);
-
-        // --- Load game state from Redis (again, for safety) ---
-        const redisGame = await loadGame(roomCode);
-        if (redisGame) {
-            games[roomCode] = redisGame;
-            console.log(`[GAME] Loaded existing game for room ${roomCode}`);
-        }
-
         if (typeof callback === "function") {
             callback({ roomCode, gameState: games[roomCode], playerId });
         }
@@ -457,8 +431,6 @@ io.on('connection', (socket) => {
             history: [],
             status: null
         };
-        await saveGame(roomCode, games[roomCode]);
-        await savePlayerInfo(roomCode, playerInfo[roomCode]);
         if (typeof callback === "function") {
             callback({ roomCode });
         }
@@ -477,7 +449,6 @@ io.on('connection', (socket) => {
             playerInfo[room][playerId].color = color;
         }
         playerInfo[room][playerId].socketId = socket.id;
-        await savePlayerInfo(room, playerInfo[room]);
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${playerInfo[room][playerId].color})` });
 
@@ -532,22 +503,19 @@ io.on('connection', (socket) => {
                     break;
                 }
             }
-            await savePlayerInfo(room, playerInfo[room]);
             broadcastRoomPlayers(room);
 
             // Count active players in this room
-            const activePlayerCount = Object.values(playerInfo[room]).filter(info => !info.disconnected).length;
+            const activePlayerCount = Object.keys(playerInfo[room]).length;
             
             // Only schedule deletion if game is over and room is empty
             if (activePlayerCount === 0 && isGameOver(room)) {
                 console.log(`[ROOM] Scheduling deletion of room ${room} in 2 hours (game over)`);
-                roomDeleteTimeouts[room] = setTimeout(async () => {
+                roomDeleteTimeouts[room] = setTimeout(() => {
                     console.log(`[ROOM] Deleting room ${room} (timeout reached, game over)`);
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
                     delete games[room];
-                    await deleteGame(room);
-                    await deletePlayerInfo(room);
                 }, 2 * 60 * 60 * 1000); // 2 hours
             }
         }
@@ -644,7 +612,6 @@ io.on('connection', (socket) => {
             console.log(`[GAME] Game over by stalemate in room ${roomCode}`);
         }
 
-        await saveGame(roomCode, game);
         io.to(roomCode).emit('move', game);
         console.log(`[MOVE] Move processed and broadcast for room ${roomCode}`);
     });
@@ -790,7 +757,6 @@ io.on('connection', (socket) => {
         }
         
         for (const roomCode of playerRoomCodes) {
-            await savePlayerInfo(roomCode, playerInfo[roomCode]);
             broadcastRoomPlayers(roomCode);
 
             // Count active players in this room
@@ -799,13 +765,11 @@ io.on('connection', (socket) => {
             // Only schedule deletion if game is over and room is empty
             if (activePlayerCount === 0 && isGameOver(roomCode)) {
                 console.log(`[ROOM] Scheduling deletion of room ${roomCode} in 2 hours (game over, all sockets gone)`);
-                roomDeleteTimeouts[roomCode] = setTimeout(async () => {
+                roomDeleteTimeouts[roomCode] = setTimeout(() => {
                     console.log(`[ROOM] Deleting room ${roomCode} (timeout reached, game over, all sockets gone)`);
                     delete playerInfo[roomCode];
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
-                    await deleteGame(roomCode);
-                    await deletePlayerInfo(roomCode);
                 }, 2 * 60 * 60 * 1000); // 2 hours
             }
         }
