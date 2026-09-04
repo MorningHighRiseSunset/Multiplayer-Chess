@@ -446,6 +446,8 @@ io.on('connection', (socket) => {
         // Use persistent playerId as key instead of socket.id
         const creatorPlayerId = socket.playerId || socket.id;
         playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
+        // Add socket.id to rooms array
+        rooms[roomCode].push(socket.id);
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
