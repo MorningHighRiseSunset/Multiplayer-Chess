@@ -360,20 +360,14 @@ io.on('connection', (socket) => {
             console.log(`[JOIN] Room ${roomCode} already in memory. Current players:`, Object.keys(playerInfo[roomCode]));
         }
 
-        // AGGRESSIVE CLEANUP: Remove all disconnected players immediately
+        // AGGRESSIVE CLEANUP: Remove ALL players from Redis-loaded room, start fresh
         if (playerInfo[roomCode]) {
             const beforeCleanup = Object.keys(playerInfo[roomCode]);
-            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-                if (info.disconnected) {
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Removed disconnected player ${pid} during cleanup`);
-                }
-            }
+            // Clear all players - we'll re-add the creator if they're reconnecting
+            playerInfo[roomCode] = {};
             const afterCleanup = Object.keys(playerInfo[roomCode]);
-            if (beforeCleanup.length !== afterCleanup.length) {
-                console.log(`[JOIN] Cleanup removed ${beforeCleanup.length - afterCleanup.length} disconnected players`);
-                await savePlayerInfo(roomCode, playerInfo[roomCode]);
-            }
+            console.log(`[JOIN] Cleared all ${beforeCleanup.length} players from room ${roomCode}`);
+            await savePlayerInfo(roomCode, playerInfo[roomCode]);
         }
 
         // Remove ghost slots and expired disconnected players
@@ -401,14 +395,12 @@ io.on('connection', (socket) => {
         // Since we now immediately remove players on disconnect, reconnection won't happen via this logic
         // Just treat as new player if playerId exists (shouldn't happen normally)
         if (isReconnecting) {
-            console.log(`[JOIN] Player ${playerId} already exists in room (likely race condition), treating as reconnection`);
+            console.log(`[JOIN] Player ${playerId} already exists in room, treating as reconnection`);
             // Update socket ID
             existingPlayerInfo.socketId = socket.id;
-        }
-
-        if (!isReconnecting) {
-            // Count only active (non-disconnected) players
-            const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId && !info.disconnected).length;
+        } else {
+            // New player - check if room is full
+            const activePlayerCount = Object.keys(playerInfo[roomCode]).length;
             if (activePlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });

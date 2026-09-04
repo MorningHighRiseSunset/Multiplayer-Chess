@@ -126,9 +126,10 @@ if (leaveBtn) {
 socket.on('roomPlayers', (playerList, playersObj) => {
   updatePlayerIcons(playerList);
   updatePlayerStatus(playersObj);
-  // Update my assigned color
-  if (playersObj[socket.id] && playersObj[socket.id].color) {
-    myAutoColor = playersObj[socket.id].color;
+  // Update my assigned color - ensure socket.id is treated as string
+  const mySocketIdStr = String(socket.id);
+  if (playersObj[mySocketIdStr] && playersObj[mySocketIdStr].color) {
+    myAutoColor = playersObj[mySocketIdStr].color;
     sessionStorage.setItem('myAutoColor', myAutoColor);
     if (yourColorSpan) {
       yourColorSpan.textContent = `Your color: ${myAutoColor.charAt(0).toUpperCase() + myAutoColor.slice(1)}`;
