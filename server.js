@@ -344,15 +344,18 @@ io.on('connection', (socket) => {
         }
         console.log(`[JOIN] Room ${roomCode} exists in memory. Current players:`, Object.keys(playerInfo[roomCode]));
 
-        // Remove expired disconnected players
+        // AGGRESSIVE CLEANUP: Remove ALL disconnected players immediately
         if (playerInfo[roomCode]) {
-            const now = Date.now();
-            const gracePeriod = 2 * 60 * 1000;
+            const beforeCleanup = Object.keys(playerInfo[roomCode]);
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-                if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
+                if (info.disconnected) {
                     delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Removed expired disconnected player ${pid} in room ${roomCode}`);
+                    console.log(`[JOIN] Immediately removed disconnected player ${pid} (color: ${info.color}) from room ${roomCode}`);
                 }
+            }
+            const afterCleanup = Object.keys(playerInfo[roomCode]);
+            if (beforeCleanup.length !== afterCleanup.length) {
+                console.log(`[JOIN] Cleanup removed ${beforeCleanup.length - afterCleanup.length} disconnected players`);
             }
         }
 
