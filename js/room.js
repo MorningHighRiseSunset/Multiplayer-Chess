@@ -128,6 +128,7 @@ socket.on('roomPlayers', (playerList, playersObj) => {
   updatePlayerStatus(playersObj);
   // Update my assigned color - ensure socket.id is treated as string
   const mySocketIdStr = String(socket.id);
+  console.log('[room.js] My socket ID:', mySocketIdStr, 'Looking for:', mySocketIdStr, 'in playersObj:', Object.keys(playersObj));
   if (playersObj[mySocketIdStr] && playersObj[mySocketIdStr].color) {
     myAutoColor = playersObj[mySocketIdStr].color;
     sessionStorage.setItem('myAutoColor', myAutoColor);
@@ -135,6 +136,8 @@ socket.on('roomPlayers', (playerList, playersObj) => {
       yourColorSpan.textContent = `Your color: ${myAutoColor.charAt(0).toUpperCase() + myAutoColor.slice(1)}`;
     }
     if (readyBtn) readyBtn.disabled = false;
+  } else {
+    console.log('[room.js] My socket ID not found in playersObj!');
   }
   console.log('[room.js] Received roomPlayers:', playerList, playersObj);
 });

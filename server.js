@@ -96,7 +96,7 @@ function broadcastRoomPlayers(roomCode) {
     const activeSockets = [];
     const playerInfoForClient = {};
     for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
-        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: disconnected=${info.disconnected}, socketId=${info.socketId}`);
+        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: disconnected=${info.disconnected}, socketId=${info.socketId}, color=${info.color}`);
         if (!info.disconnected && info.socketId) {
             activeSockets.push(info.socketId);
             // Use socketId as key for client compatibility
@@ -108,6 +108,7 @@ function broadcastRoomPlayers(roomCode) {
         }
     }
     console.log(`[BROADCAST] Broadcasting ${activeSockets.length} active players to room ${roomCode}:`, activeSockets);
+    console.log(`[BROADCAST] Player info for client:`, playerInfoForClient);
     io.to(roomCode).emit('roomPlayers', activeSockets, playerInfoForClient);
 }
 
