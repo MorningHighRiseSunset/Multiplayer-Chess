@@ -101,7 +101,18 @@ const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
     const sockets = rooms[roomCode] || [];
-    io.to(roomCode).emit('roomPlayers', sockets, playerInfo[roomCode] || {});
+    // Convert playerInfo (keyed by playerId) to format expected by client
+    const playerInfoForClient = {};
+    for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
+        // Use socketId as key for client compatibility
+        const clientKey = info.socketId || playerId;
+        playerInfoForClient[clientKey] = {
+            color: info.color,
+            ready: info.ready,
+            playerId: info.playerId
+        };
+    }
+    io.to(roomCode).emit('roomPlayers', sockets, playerInfoForClient);
 }
 
 function clearRoomDeleteTimeout(roomCode) {
@@ -367,32 +378,19 @@ io.on('connection', (socket) => {
             }
         }
 
-        // Check if this playerId is already connected (duplicate)
-        let duplicate = false;
-        for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-            if (info.playerId === playerId && !info.disconnected) {
-                duplicate = true;
-                break;
-            }
-        }
-        if (duplicate) {
-            console.log(`[JOIN] Duplicate playerId detected for ${playerId}, generating new UUID`);
-            playerId = randomUUID();
-        }
-
         // Find existing slot for this playerId (for reconnection)
-        let playerSlot = null;
-        for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-            if (info.playerId === playerId) {
-                playerSlot = pid;
-                console.log(`[JOIN] Found existing slot for reconnection: ${playerSlot}`);
-                break;
-            }
-        }
+        let existingPlayerInfo = playerInfo[roomCode][playerId];
+        let isReconnecting = !!existingPlayerInfo;
 
-        // Count only active (non-disconnected) players
-        const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId && !info.disconnected).length;
-        if (!playerSlot) {
+        if (isReconnecting) {
+            console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode}`);
+            // Update socket ID for the reconnected player
+            existingPlayerInfo.socketId = socket.id;
+            existingPlayerInfo.disconnected = false;
+            existingPlayerInfo.disconnectedAt = null;
+        } else {
+            // Count only active (non-disconnected) players
+            const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId && !info.disconnected).length;
             if (activePlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
@@ -400,23 +398,19 @@ io.on('connection', (socket) => {
                 console.log(`[JOIN] Room ${roomCode} is full. ${socket.id} denied. Active players: ${activePlayerCount}`);
                 return;
             }
-            playerSlot = socket.id;
             // Auto-assign color based on current active players
             const autoColor = activePlayerCount === 0 ? 'white' : 'black';
-            playerInfo[roomCode][playerSlot] = { color: autoColor, ready: false, playerId, disconnected: false };
-            console.log(`[JOIN] Auto-assigned ${autoColor} to ${socket.id}. Active players: ${activePlayerCount}`);
+            playerInfo[roomCode][playerId] = { color: autoColor, ready: false, playerId, disconnected: false, socketId: socket.id };
+            console.log(`[JOIN] Auto-assigned ${autoColor} to ${socket.id} (playerId: ${playerId}). Active players: ${activePlayerCount}`);
         }
         playerSockets[playerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
+        // Add socket.id to rooms array for socket.io room management
         rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
         if (!rooms[roomCode].includes(socket.id)) rooms[roomCode].push(socket.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
         socket.playerId = playerId;
-        console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}`);
-        if (playerInfo[roomCode][playerSlot]) {
-            playerInfo[roomCode][playerSlot].disconnected = false;
-            playerInfo[roomCode][playerSlot].disconnectedAt = null;
-        }
+        console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}, isReconnecting: ${isReconnecting}`);
 
         // Save playerInfo to Redis
         await savePlayerInfo(roomCode, playerInfo[roomCode]);
@@ -449,8 +443,9 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        // Auto-assign white to the creator
-        playerInfo[roomCode][socket.id] = { color: 'white', ready: false, playerId: socket.playerId || socket.id, disconnected: false };
+        // Use persistent playerId as key instead of socket.id
+        const creatorPlayerId = socket.playerId || socket.id;
+        playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
@@ -468,47 +463,52 @@ io.on('connection', (socket) => {
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        console.log(`[ROOM] Created new room: ${roomCode} by ${socket.id} (assigned white)`);
+        console.log(`[ROOM] Created new room: ${roomCode} by ${socket.id} (assigned white, playerId: ${creatorPlayerId})`);
     });
 
     socket.on('playerReady', async ({ room, color }) => {
+        const playerId = socket.playerId || socket.id;
         if (!playerInfo[room]) playerInfo[room] = {};
-        if (!playerInfo[room][socket.id]) playerInfo[room][socket.id] = { color: null, ready: false, playerId: socket.playerId || socket.id };
-        playerInfo[room][socket.id].ready = true;
+        if (!playerInfo[room][playerId]) playerInfo[room][playerId] = { color: null, ready: false, playerId, socketId: socket.id };
+        playerInfo[room][playerId].ready = true;
         // Use auto-assigned color
-        if (!playerInfo[room][socket.id].color) {
-            playerInfo[room][socket.id].color = color;
+        if (!playerInfo[room][playerId].color) {
+            playerInfo[room][playerId].color = color;
         }
-        playerInfo[room][socket.id].playerId = socket.playerId || socket.id;
+        playerInfo[room][playerId].socketId = socket.id;
         await savePlayerInfo(room, playerInfo[room]);
         broadcastRoomPlayers(room);
-        io.to(room).emit('roomStatus', { msg: `A player is ready (${playerInfo[room][socket.id].color})` });
+        io.to(room).emit('roomStatus', { msg: `A player is ready (${playerInfo[room][playerId].color})` });
 
         const readyPlayers = Object.values(playerInfo[room]).filter(p => p.ready);
         console.log(`[ROOM] Ready players in room ${room}:`, readyPlayers.length, 'out of', Object.keys(playerInfo[room]).length);
         console.log(`[ROOM] Player info:`, playerInfo[room]);
         
         if (readyPlayers.length === 2) {
-            const sockets = Object.keys(playerInfo[room]);
+            const playerIds = Object.keys(playerInfo[room]);
             const colorAssignments = {};
             const roles = {};
             let firstTurn = 'white';
 
-            let whiteSocket = null, blackSocket = null;
-            for (const sid of sockets) {
-                if (playerInfo[room][sid].color === 'white') whiteSocket = sid;
-                if (playerInfo[room][sid].color === 'black') blackSocket = sid;
+            let whitePlayerId = null, blackPlayerId = null;
+            for (const pid of playerIds) {
+                if (playerInfo[room][pid].color === 'white') whitePlayerId = pid;
+                if (playerInfo[room][pid].color === 'black') blackPlayerId = pid;
             }
-            if (whiteSocket && blackSocket) {
-                colorAssignments[whiteSocket] = 'white';
-                colorAssignments[blackSocket] = 'black';
-                roles[whiteSocket] = 'Player 1';
-                roles[blackSocket] = 'Player 2';
+            if (whitePlayerId && blackPlayerId) {
+                const whiteSocketId = playerInfo[room][whitePlayerId].socketId;
+                const blackSocketId = playerInfo[room][blackPlayerId].socketId;
+                colorAssignments[whiteSocketId] = 'white';
+                colorAssignments[blackSocketId] = 'black';
+                roles[whiteSocketId] = 'Player 1';
+                roles[blackSocketId] = 'Player 2';
             } else {
-                colorAssignments[sockets[0]] = 'white';
-                colorAssignments[sockets[1]] = 'black';
-                roles[sockets[0]] = 'Player 1';
-                roles[sockets[1]] = 'Player 2';
+                const socketId1 = playerInfo[room][playerIds[0]].socketId;
+                const socketId2 = playerInfo[room][playerIds[1]].socketId;
+                colorAssignments[socketId1] = 'white';
+                colorAssignments[socketId2] = 'black';
+                roles[socketId1] = 'Player 1';
+                roles[socketId2] = 'Player 2';
             }
             io.to(room).emit('startGame', { colorAssignments, firstTurn, roles });
             console.log(`[ROOM] Both players ready in room ${room}. Game starting.`);
@@ -770,10 +770,12 @@ io.on('connection', (socket) => {
         for (const roomCode in rooms) {
             if (rooms[roomCode].includes(socket.id)) {
                 rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-                // Mark player as disconnected instead of deleting
-                if (playerInfo[roomCode] && playerInfo[roomCode][socket.id]) {
-                    playerInfo[roomCode][socket.id].disconnected = true;
-                    playerInfo[roomCode][socket.id].disconnectedAt = Date.now();
+                // Mark player as disconnected using playerId instead of socket.id
+                const playerId = socket.playerId || socket.id;
+                if (playerInfo[roomCode] && playerInfo[roomCode][playerId]) {
+                    playerInfo[roomCode][playerId].disconnected = true;
+                    playerInfo[roomCode][playerId].disconnectedAt = Date.now();
+                    console.log(`[DISCONNECT] Player ${playerId} marked as disconnected in room ${roomCode}`);
                 }
                 await savePlayerInfo(roomCode, playerInfo[roomCode]);
                 broadcastRoomPlayers(roomCode);
