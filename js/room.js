@@ -156,6 +156,9 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   sessionStorage.setItem('myRole', myRole);
   sessionStorage.setItem('startFirstTurn', firstTurn);
   if (myAssignedColor && myRole) {
+    // Disconnect this socket before navigating to prevent duplicate connections
+    socket.disconnect();
+    console.log('[room.js] Disconnected room socket before navigating to game');
     window.location.href = `game.html?room=${roomCode}&color=${myAssignedColor}`;
     console.log('[room.js] Starting game as', myAssignedColor, myRole);
   } else {
