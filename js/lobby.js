@@ -61,7 +61,7 @@ document.getElementById('create-room').addEventListener('click', () => {
 
 function createRoomNow() {
     statusDiv.textContent = 'Creating game...';
-    socket.emit('createRoom', ({ roomCode }) => {
+    socket.emit('createRoom', { playerId }, ({ roomCode }) => {
         console.log('[lobby.js] Room created with code:', roomCode);
         // Save playerId and last room for use in room.js
         sessionStorage.setItem('lastRoomCode', roomCode);

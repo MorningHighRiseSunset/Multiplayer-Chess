@@ -442,7 +442,8 @@ io.on('connection', (socket) => {
         console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}`);
     });
 
-    socket.on('createRoom', async (callback) => {
+    socket.on('createRoom', async (data, callback) => {
+        const clientPlayerId = data && data.playerId;
         let roomCode;
         do {
             roomCode = Math.random().toString(36).substr(2, 6).toUpperCase();
@@ -450,12 +451,13 @@ io.on('connection', (socket) => {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-        // Use persistent playerId as key instead of socket.id
-        const creatorPlayerId = socket.playerId || socket.id;
+        // Use the playerId from client if provided, otherwise generate new UUID
+        const creatorPlayerId = clientPlayerId || randomUUID();
         playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
         socket.playerId = creatorPlayerId;
         playerSockets[creatorPlayerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
         console.log(`[CREATEROOM] Created room ${roomCode} with creator ${creatorPlayerId} (socket: ${socket.id})`);
+        
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
