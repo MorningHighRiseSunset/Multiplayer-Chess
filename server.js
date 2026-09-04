@@ -354,26 +354,20 @@ io.on('connection', (socket) => {
         let existingPlayerInfo = playerInfo[roomCode][playerId];
         let isReconnecting = !!existingPlayerInfo;
 
-        // Check if this is a true reconnection (same playerId, but was disconnected)
-        if (isReconnecting && existingPlayerInfo.disconnected) {
+        // Check if this is a true reconnection (same playerId, same socket ID, but was disconnected)
+        if (isReconnecting && existingPlayerInfo.disconnected && existingPlayerInfo.socketId === socket.id) {
             console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode} as ${existingPlayerInfo.color}`);
-            // Update socket ID and mark as connected
-            existingPlayerInfo.socketId = socket.id;
+            // Mark as connected
             existingPlayerInfo.disconnected = false;
             existingPlayerInfo.disconnectedAt = null;
-        } else if (isReconnecting && !existingPlayerInfo.disconnected) {
-            // Same playerId but player is still connected - check if socket ID matches
-            if (existingPlayerInfo.socketId !== socket.id) {
-                // Different socket ID - treat as reconnection (probably duplicate from localStorage)
-                console.log(`[JOIN] Player ${playerId} reconnecting with new socket ID, treating as reconnection. Previous socket: ${existingPlayerInfo.socketId}, New socket: ${socket.id}`);
-                existingPlayerInfo.socketId = socket.id;
-                existingPlayerInfo.disconnected = false;
-                existingPlayerInfo.disconnectedAt = null;
-            } else {
-                // Same socket ID - shouldn't happen, but handle gracefully
-                console.log(`[JOIN] Duplicate connection with same socket ID, ignoring`);
-                return;
-            }
+        } else if (isReconnecting) {
+            // Different socket ID or not disconnected - treat as new player (duplicate from localStorage)
+            console.log(`[JOIN] Duplicate playerId detected (different socket or not disconnected), treating as new player`);
+            isReconnecting = false;
+            existingPlayerInfo = null;
+            // Generate a new unique playerId for this connection
+            playerId = randomUUID();
+            console.log(`[JOIN] Generated new playerId ${playerId} for duplicate connection`);
         }
 
         if (!isReconnecting) {
