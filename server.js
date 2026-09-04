@@ -103,6 +103,7 @@ function broadcastRoomPlayers(roomCode) {
     const activeSockets = [];
     const playerInfoForClient = {};
     for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
+        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: disconnected=${info.disconnected}, socketId=${info.socketId}`);
         if (!info.disconnected && info.socketId) {
             activeSockets.push(info.socketId);
             // Use socketId as key for client compatibility
@@ -113,6 +114,7 @@ function broadcastRoomPlayers(roomCode) {
             };
         }
     }
+    console.log(`[BROADCAST] Broadcasting ${activeSockets.length} active players to room ${roomCode}:`, activeSockets);
     io.to(roomCode).emit('roomPlayers', activeSockets, playerInfoForClient);
 }
 
@@ -346,7 +348,7 @@ io.on('connection', (socket) => {
             if (redisGame) {
                 games[roomCode] = redisGame;
                 playerInfo[roomCode] = redisPlayerInfo || {};
-                console.log(`[PATCH] Room ${roomCode} recreated from Redis for reconnect`);
+                console.log(`[PATCH] Room ${roomCode} recreated from Redis for reconnect. Players in Redis:`, Object.keys(playerInfo[roomCode]));
             } else {
                 if (typeof callback === "function") {
                     callback({ error: 'Room not found.' });
@@ -354,29 +356,27 @@ io.on('connection', (socket) => {
                 console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
                 return;
             }
+        } else {
+            console.log(`[JOIN] Room ${roomCode} already in memory. Current players:`, Object.keys(playerInfo[roomCode]));
         }
 
-        // Remove ghost slots
+        // Remove ghost slots and expired disconnected players
         if (playerInfo[roomCode]) {
+            const now = Date.now();
+            const gracePeriod = 2 * 60 * 1000;
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
                 if (!info.playerId) {
                     delete playerInfo[roomCode][pid];
+                    console.log(`[JOIN] Removed ghost slot ${pid} in room ${roomCode}`);
+                } else if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
+                    delete playerInfo[roomCode][pid];
+                    console.log(`[JOIN] Removed expired disconnected player ${pid} in room ${roomCode}`);
                 }
             }
         }
 
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
-
-        // Remove expired disconnected slots first
-        const now = Date.now();
-        const gracePeriod = 2 * 60 * 1000;
-        for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-            if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
-                delete playerInfo[roomCode][pid];
-                console.log(`[JOIN] Removed expired disconnected slot ${pid}`);
-            }
-        }
 
         // Find existing slot for this playerId (for reconnection)
         let existingPlayerInfo = playerInfo[roomCode][playerId];
@@ -455,6 +455,7 @@ io.on('connection', (socket) => {
         playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
         socket.playerId = creatorPlayerId;
         playerSockets[creatorPlayerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
+        console.log(`[CREATEROOM] Created room ${roomCode} with creator ${creatorPlayerId} (socket: ${socket.id})`);
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
