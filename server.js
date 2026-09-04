@@ -363,13 +363,24 @@ io.on('connection', (socket) => {
         let existingPlayerInfo = playerInfo[roomCode][playerId];
         let isReconnecting = !!existingPlayerInfo;
 
-        if (isReconnecting) {
+        // Check if this is a true reconnection (same playerId, but was disconnected)
+        if (isReconnecting && existingPlayerInfo.disconnected) {
             console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode}`);
             // Update socket ID and mark as connected
             existingPlayerInfo.socketId = socket.id;
             existingPlayerInfo.disconnected = false;
             existingPlayerInfo.disconnectedAt = null;
-        } else {
+        } else if (isReconnecting && !existingPlayerInfo.disconnected) {
+            // Same playerId but player is still connected - treat as new player (duplicate from localStorage)
+            console.log(`[JOIN] Duplicate playerId detected (same localStorage, player still connected), treating as new player`);
+            isReconnecting = false;
+            existingPlayerInfo = null;
+            // Generate a new unique playerId for this connection
+            playerId = randomUUID();
+            console.log(`[JOIN] Generated new playerId ${playerId} for duplicate connection`);
+        }
+
+        if (!isReconnecting) {
             // New player - check if room is full (only count non-disconnected players)
             const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => !info.disconnected).length;
             if (activePlayerCount >= 2) {
