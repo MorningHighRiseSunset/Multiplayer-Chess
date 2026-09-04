@@ -372,13 +372,14 @@ io.on('connection', (socket) => {
                 playerInfo[roomCode][playerId] = creatorInfo;
                 console.log(`[JOIN] Preserved creator ${playerId}, cleared other players`);
             } else {
-                // Clear all - it's a new player joining
-                playerInfo[roomCode] = {};
-                console.log(`[JOIN] Cleared all players from room ${roomCode}`);
+                // New player joining - keep existing players, don't clear the room
+                console.log(`[JOIN] New player joining, keeping existing ${beforeCleanup.length} players`);
             }
             
             const afterCleanup = Object.keys(playerInfo[roomCode]);
-            await savePlayerInfo(roomCode, playerInfo[roomCode]);
+            if (beforeCleanup.length !== afterCleanup.length) {
+                await savePlayerInfo(roomCode, playerInfo[roomCode]);
+            }
         }
 
         // Remove ghost slots and expired disconnected players
