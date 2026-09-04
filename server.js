@@ -344,20 +344,8 @@ io.on('connection', (socket) => {
         }
         console.log(`[JOIN] Room ${roomCode} exists in memory. Current players:`, Object.keys(playerInfo[roomCode]));
 
-        // AGGRESSIVE CLEANUP: Remove ALL disconnected players immediately
-        if (playerInfo[roomCode]) {
-            const beforeCleanup = Object.keys(playerInfo[roomCode]);
-            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-                if (info.disconnected) {
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Immediately removed disconnected player ${pid} (color: ${info.color}) from room ${roomCode}`);
-                }
-            }
-            const afterCleanup = Object.keys(playerInfo[roomCode]);
-            if (beforeCleanup.length !== afterCleanup.length) {
-                console.log(`[JOIN] Cleanup removed ${beforeCleanup.length - afterCleanup.length} disconnected players`);
-            }
-        }
+        // NO CLEANUP - Keep disconnected players to allow reconnection between page navigations
+        // Only filter them out when counting for color assignment
 
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
