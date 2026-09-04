@@ -357,54 +357,54 @@ io.on('connection', (socket) => {
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
 
-        // Prevent duplicate playerId - check if this playerId is already connected
+        // Remove expired disconnected slots first
+        const now = Date.now();
+        const gracePeriod = 2 * 60 * 1000;
+        for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
+            if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
+                delete playerInfo[roomCode][pid];
+                console.log(`[JOIN] Removed expired disconnected slot ${pid}`);
+            }
+        }
+
+        // Check if this playerId is already connected (duplicate)
         let duplicate = false;
-        let existingSlotForDuplicate = null;
         for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
             if (info.playerId === playerId && !info.disconnected) {
                 duplicate = true;
-                existingSlotForDuplicate = pid;
                 break;
             }
         }
         if (duplicate) {
             console.log(`[JOIN] Duplicate playerId detected for ${playerId}, generating new UUID`);
             playerId = randomUUID();
-            // Don't look for existing slot with the new UUID - this is a new player
         }
 
-        // Find or assign player slot (only if not a duplicate)
+        // Find existing slot for this playerId (for reconnection)
         let playerSlot = null;
-        if (!duplicate) {
-            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-                if (info.playerId === playerId) {
-                    playerSlot = pid;
-                    break;
-                }
-            }
-        }
-        // Remove expired disconnected slots
-        const now = Date.now();
-        const gracePeriod = 2 * 60 * 1000;
         for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-            if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
-                delete playerInfo[roomCode][pid];
+            if (info.playerId === playerId) {
+                playerSlot = pid;
+                console.log(`[JOIN] Found existing slot for reconnection: ${playerSlot}`);
+                break;
             }
         }
-        const realPlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId).length;
+
+        // Count only active (non-disconnected) players
+        const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId && !info.disconnected).length;
         if (!playerSlot) {
-            if (realPlayerCount >= 2) {
+            if (activePlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
                 }
-                console.log(`[JOIN] Room ${roomCode} is full. ${socket.id} denied.`);
+                console.log(`[JOIN] Room ${roomCode} is full. ${socket.id} denied. Active players: ${activePlayerCount}`);
                 return;
             }
             playerSlot = socket.id;
-            // Auto-assign black to the second player joining
-            const autoColor = realPlayerCount === 0 ? 'white' : 'black';
-            playerInfo[roomCode][playerSlot] = { color: autoColor, ready: false, playerId };
-            console.log(`[JOIN] Auto-assigned ${autoColor} to ${socket.id}`);
+            // Auto-assign color based on current active players
+            const autoColor = activePlayerCount === 0 ? 'white' : 'black';
+            playerInfo[roomCode][playerSlot] = { color: autoColor, ready: false, playerId, disconnected: false };
+            console.log(`[JOIN] Auto-assigned ${autoColor} to ${socket.id}. Active players: ${activePlayerCount}`);
         }
         playerSockets[playerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
         rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
@@ -450,7 +450,7 @@ io.on('connection', (socket) => {
         socket.roomCode = roomCode;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
         // Auto-assign white to the creator
-        playerInfo[roomCode][socket.id] = { color: 'white', ready: false, playerId: socket.playerId || socket.id };
+        playerInfo[roomCode][socket.id] = { color: 'white', ready: false, playerId: socket.playerId || socket.id, disconnected: false };
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
             turn: 'w',
@@ -770,7 +770,11 @@ io.on('connection', (socket) => {
         for (const roomCode in rooms) {
             if (rooms[roomCode].includes(socket.id)) {
                 rooms[roomCode] = rooms[roomCode].filter(id => id !== socket.id);
-                if (playerInfo[roomCode]) delete playerInfo[roomCode][socket.id];
+                // Mark player as disconnected instead of deleting
+                if (playerInfo[roomCode] && playerInfo[roomCode][socket.id]) {
+                    playerInfo[roomCode][socket.id].disconnected = true;
+                    playerInfo[roomCode][socket.id].disconnectedAt = Date.now();
+                }
                 await savePlayerInfo(roomCode, playerInfo[roomCode]);
                 broadcastRoomPlayers(roomCode);
 
