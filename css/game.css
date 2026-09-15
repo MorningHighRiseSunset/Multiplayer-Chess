@@ -30,7 +30,7 @@ body, html {
   flex-direction: row;
   gap: 20px;
   flex: 1;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
 }
 
