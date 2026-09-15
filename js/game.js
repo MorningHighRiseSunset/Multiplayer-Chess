@@ -139,9 +139,7 @@ if (!moveHistoryElem) {
   moveHistoryElem.innerHTML = '<b>Move History</b><div id="move-history-list"></div>';
   const sidebar = document.querySelector('.game-sidebar');
   if (sidebar) {
-    sidebar.insertBefore(moveHistoryElem, sidebar.firstChild);
-  } else {
-    boardElem.parentNode.insertBefore(moveHistoryElem, boardElem.nextSibling);
+    sidebar.appendChild(moveHistoryElem);
   }
 }
 
@@ -152,12 +150,9 @@ if (!controlPanel) {
   controlPanel.id = 'game-controls';
   controlPanel.style.display = 'flex';
   controlPanel.style.gap = '12px';
-  // Find game-top and insert controls there
-  const gameTop = document.querySelector('.game-top');
-  if (gameTop) {
-    gameTop.appendChild(controlPanel);
-  } else {
-    boardElem.parentNode.insertBefore(controlPanel, boardElem);
+  const sidebar = document.querySelector('.game-sidebar');
+  if (sidebar) {
+    sidebar.appendChild(controlPanel);
   }
 }
 if (!document.getElementById('resign-btn')) {
@@ -176,9 +171,7 @@ if (!document.getElementById('resign-btn')) {
       socket.emit('resign', { roomCode });
     }
   };
-  if (controlPanel) {
-    controlPanel.appendChild(resignBtn);
-  }
+  controlPanel.appendChild(resignBtn);
 }
 if (!document.getElementById('draw-btn')) {
   const drawBtn = document.createElement('button');

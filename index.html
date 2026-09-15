@@ -21,23 +21,24 @@
 </head>
 <body>
   <div class="game-container">
-    <div class="game-left">
-      <div class="game-header">
-        <h1>Multiplayer Chess</h1>
-        <div class="game-actions">
-          <button id="copy-link-btn" title="Copy Invite Link">Copy Link</button>
-          <a href="." id="new-game-btn">New Game</a>
-        </div>
+    <div class="game-header">
+      <h1>Multiplayer Chess</h1>
+      <div class="game-actions">
+        <button id="copy-link-btn" title="Copy Invite Link">Copy Link</button>
+        <a href="." id="new-game-btn">New Game</a>
       </div>
-      <div class="game-url" id="game-url">
-        <span id="url-text">Share this URL with your opponent:</span>
-        <input type="text" id="url-input" readonly value="">
-      </div>
-      <div id="game-status"></div>
-      <div id="game-controls"></div>
     </div>
-    <div class="game-right">
+    <div class="game-url" id="game-url">
+      <span id="url-text">Share this URL with your opponent:</span>
+      <input type="text" id="url-input" readonly value="">
+    </div>
+    <div class="game-main">
+      <div class="game-board-container">
+        <div id="chess3d"></div>
+      </div>
       <div class="game-sidebar">
+        <div id="game-status"></div>
+        <div id="game-controls"></div>
         <div id="move-history">
           <b>Move History</b>
           <div id="move-history-list"></div>
@@ -50,9 +51,6 @@
             <button type="submit" class="chat-send">Send</button>
           </form>
         </div>
-      </div>
-      <div class="game-board-container">
-        <div id="chess3d"></div>
       </div>
     </div>
   </div>
