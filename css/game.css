@@ -17,6 +17,47 @@ body, html {
   gap: 24px;
 }
 
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 600px;
+  padding: 0 20px;
+  margin-bottom: 10px;
+}
+
+.game-header h1 {
+  color: #ffe082;
+  font-size: 1.8em;
+  margin: 0;
+}
+
+.game-actions {
+  display: flex;
+  gap: 12px;
+}
+
+#copy-link-btn, #new-game-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1.5px solid #ffe082;
+  background: #232b39;
+  color: #ffe082;
+  font-weight: bold;
+  font-size: 1em;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border 0.18s;
+  text-decoration: none;
+  box-shadow: 0 1px 2px #0002;
+}
+
+#copy-link-btn:hover, #new-game-btn:hover {
+  background: #ffe082;
+  color: #232b39;
+  border-color: #ffe082;
+}
+
 #chess3d {
   width: 384px;
   height: 384px;

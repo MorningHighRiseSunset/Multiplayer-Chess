@@ -78,9 +78,9 @@ app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
 app.use(express.static(__dirname));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.get('/lobby', (req, res) => res.sendFile(path.join(__dirname, 'lobby.html')));
-app.get('/room', (req, res) => res.sendFile(path.join(__dirname, 'room.html')));
-app.get('/game', (req, res) => res.sendFile(path.join(__dirname, 'game.html')));
+app.get('/lobby', (req, res) => res.redirect('/'));
+app.get('/room', (req, res) => res.redirect('/'));
+app.get('/game', (req, res) => res.redirect('/'));
 
 const initialBoard = [
   ["bR","bN","bB","bQ","bK","bB","bN","bR"],
@@ -442,7 +442,7 @@ io.on('connection', (socket) => {
         }
 
         if (typeof callback === "function") {
-            callback({ roomCode, gameState: games[roomCode], playerId });
+            callback({ roomCode, gameState: games[roomCode], playerId, players: playerInfo[roomCode] });
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
@@ -451,6 +451,38 @@ io.on('connection', (socket) => {
         }
         socket.to(roomCode).emit('opponentReconnected');
         console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}`);
+
+        // Auto-start game when 2 players are present
+        const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => info.playerId && !info.disconnected).length;
+        if (activePlayerCount === 2 && !isReconnecting) {
+            console.log(`[JOIN] 2 players present, auto-starting game in room ${roomCode}`);
+            const playerIds = Object.keys(playerInfo[roomCode]);
+            const colorAssignments = {};
+            const roles = {};
+            let firstTurn = 'white';
+
+            let whitePlayerId = null, blackPlayerId = null;
+            for (const pid of playerIds) {
+                if (playerInfo[roomCode][pid].color === 'white') whitePlayerId = pid;
+                if (playerInfo[roomCode][pid].color === 'black') blackPlayerId = pid;
+            }
+            if (whitePlayerId && blackPlayerId) {
+                const whiteSocketId = playerInfo[roomCode][whitePlayerId].socketId;
+                const blackSocketId = playerInfo[roomCode][blackPlayerId].socketId;
+                colorAssignments[whiteSocketId] = 'white';
+                colorAssignments[blackSocketId] = 'black';
+                roles[whiteSocketId] = 'Player 1';
+                roles[blackSocketId] = 'Player 2';
+            } else {
+                const socketId1 = playerInfo[roomCode][playerIds[0]].socketId;
+                const socketId2 = playerInfo[roomCode][playerIds[1]].socketId;
+                colorAssignments[socketId1] = 'white';
+                colorAssignments[socketId2] = 'black';
+                roles[socketId1] = 'Player 1';
+                roles[socketId2] = 'Player 2';
+            }
+            io.to(roomCode).emit('startGame', { colorAssignments, firstTurn, roles });
+        }
     });
 
     socket.on('createRoom', async (data, callback) => {

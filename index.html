@@ -1,34 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-5T4SBXRJQM"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      gtag('config', 'G-5T4SBXRJQM');
-    </script>
-    <!-- Vercel Web Analytics -->
-    <script>
-      window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-    </script>
-    <script defer src="https://cdn.vercel-insights.com/v1/script.js"></script>
-    <title>CSS 3D Chessboard</title>
-    <link rel="stylesheet" href="css/play.css">
+  <meta charset="UTF-8">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-5T4SBXRJQM"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-5T4SBXRJQM');
+  </script>
+  <!-- Vercel Web Analytics -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="https://cdn.vercel-insights.com/v1/script.js"></script>
+  <title>Multiplayer Chess</title>
+  <link rel="stylesheet" href="css/game.css">
+  <link rel="stylesheet" href="css/video.css">
 </head>
 <body>
+  <div class="game-container">
+    <div class="game-header">
+      <h1>Multiplayer Chess</h1>
+      <div class="game-actions">
+        <button id="copy-link-btn" title="Copy Invite Link">Copy Link</button>
+        <a href="." id="new-game-btn">New Game</a>
+      </div>
+    </div>
     <div id="chess3d"></div>
-    <a href="lobby.html" id="play-btn">Play</a>
-    <!-- Wake up Render server as soon as user lands on page -->
-    <script>
-        fetch('https://multiplayer-chess-exdx.onrender.com/', { mode: 'no-cors' });
-        document.getElementById('play-btn').addEventListener('click', function() {
-            fetch('https://multiplayer-chess-exdx.onrender.com/', { mode: 'no-cors' });
-        });
-    </script>
-    <script src="js/play.js"></script>
+    <div id="game-status"></div>
+    <div id="game-controls"></div>
+    <div id="move-history">
+      <b>Move History</b>
+      <div id="move-history-list"></div>
+    </div>
+    <div class="chat-card">
+      <div class="chat-header">Game Chat</div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <form class="chat-form" id="chat-form">
+        <input class="chat-input" id="chat-input" type="text" placeholder="Type a message..." maxlength="200" autocomplete="off" />
+        <button type="submit" class="chat-send">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Video Chat Container -->
+  <div id="videoChatContainer" class="video-chat-container" style="display: none;">
+    <div class="video-chat-header">
+      <span>Video Chat</span>
+      <button class="minimize-btn" id="minimizeVideo">−</button>
+    </div>
+    <div class="video-content">
+      <div class="local-video-container">
+        <video id="localVideo" class="local-video" autoplay muted playsinline></video>
+        <div class="local-video-label">You</div>
+      </div>
+      <div id="remoteVideos" class="remote-videos"></div>
+      <div class="video-controls">
+        <button id="toggleVideo" class="video-control-btn" title="Turn off video">🔴</button>
+        <button id="toggleAudio" class="video-control-btn" title="Mute">🔇</button>
+        <button id="leaveVideo" class="video-control-btn danger" title="Leave video chat">❌</button>
+      </div>
+      <div id="videoStatus" class="video-status">Connecting...</div>
+    </div>
+  </div>
+
+  <!-- Video Chat Toggle Button -->
+  <button id="videoChatToggle" class="video-chat-toggle-btn" title="Start Video Chat">
+    📹
+  </button>
+  <!-- Modals for promotion and castling (optional, JS will create if missing) -->
+  <div id="promotion-modal" style="display:none"></div>
+  <div id="castling-modal" style="display:none"></div>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="js/video-chat.js"></script>
+  <script src="js/game.js"></script>
 </body>
 </html>

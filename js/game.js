@@ -8,7 +8,8 @@ if (!playerId) {
 const socket = io('https://multiplayer-chess-exdx.onrender.com');
 const urlParams = new URLSearchParams(window.location.search);
 const roomCode = urlParams.get('room');
-const myColor = urlParams.get('color') || 'white';
+let myColor = null; // Will be set by server
+let gameCreated = false;
 
 const initialBoard = [
   ["bR","bN","bB","bQ","bK","bB","bN","bR"],
@@ -39,13 +40,15 @@ let gameState = {
 
 let selected = null;
 let legalMoves = [];
-let myTurn = (myColor === 'white');
+let myTurn = false; // Will be set when color is assigned
 let lastMove = null;
 let gameOver = false;
 let preMove = null;
 let animating = false;
 let animationFrame = null;
 let animationData = null;
+let myAssignedColor = null;
+let myRole = null;
 const boardElem = document.getElementById('chess3d');
 const statusElem = document.getElementById('game-status');
 
@@ -900,6 +903,20 @@ function checkGameOver() {
   if (!gameOver) checkDrawConditions();
 }
 
+// --- Start game event ---
+socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
+  myAssignedColor = colorAssignments ? colorAssignments[socket.id] : myColor;
+  myRole = roles ? roles[socket.id] : null;
+  myColor = myAssignedColor || myColor;
+  myTurn = (myColor === 'white');
+  sessionStorage.setItem('myAssignedColor', myAssignedColor);
+  sessionStorage.setItem('myRole', myRole);
+  sessionStorage.setItem('startFirstTurn', firstTurn);
+  console.log('[game.js] Game started as', myColor, myRole);
+  statusElem.textContent = myTurn ? "Your turn (white)" : "Opponent's turn (black)";
+  renderBoard();
+});
+
 // --- Rematch event ---
 socket.on('rematch', (newState) => {
   gameState = newState;
@@ -915,18 +932,104 @@ socket.on('rematch', (newState) => {
   document.getElementById('rematch-btn').style.display = 'none';
 });
 
+// --- Copy link button ---
+const copyLinkBtn = document.getElementById('copy-link-btn');
+if (copyLinkBtn) {
+  copyLinkBtn.onclick = () => {
+    const link = window.location.href;
+    navigator.clipboard.writeText(link);
+    copyLinkBtn.textContent = "Copied!";
+    setTimeout(() => copyLinkBtn.textContent = "Copy Link", 1200);
+  };
+}
+
+// --- New game button ---
+const newGameBtn = document.getElementById('new-game-btn');
+if (newGameBtn) {
+  newGameBtn.onclick = () => {
+    window.location.href = window.location.pathname;
+  };
+}
+
+// --- Game creation/joining logic ---
+function initGame() {
+  if (!roomCode) {
+    // No room code - create new game as white
+    statusElem.textContent = "Creating game...";
+    socket.emit('createRoom', ({ roomCode: newRoomCode }) => {
+      if (newRoomCode) {
+        // Update URL with room code
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('room', newRoomCode);
+        window.history.replaceState({}, '', newUrl);
+        // Join the room as white
+        socket.emit('joinRoom', { roomCode: newRoomCode, playerId }, (res) => {
+          if (res && res.error) {
+            statusElem.textContent = res.error;
+          } else {
+            myColor = 'white';
+            myTurn = true;
+            statusElem.textContent = "Waiting for opponent (share the link!)";
+            console.log('[game.js] Created and joined room as white:', newRoomCode);
+            
+            // Load game state if available
+            if (res && res.gameState) {
+              updateFromServer(res.gameState);
+            }
+          }
+        });
+      }
+    });
+  } else {
+    // Room code exists - join (will be assigned color by server)
+    statusElem.textContent = "Joining game...";
+    socket.emit('joinRoom', { roomCode, playerId }, (res) => {
+      if (res && res.error) {
+        statusElem.textContent = res.error;
+        setTimeout(() => window.location.href = window.location.pathname, 3000);
+      } else {
+        // Determine color based on server assignment
+        const playerInfo = res.players || {};
+        const myPlayerInfo = Object.values(playerInfo).find(p => p.playerId === playerId);
+        if (myPlayerInfo) {
+          myColor = myPlayerInfo.color;
+          myTurn = (myColor === 'white');
+          statusElem.textContent = myColor === 'white' ? "Waiting for opponent" : "Joined as black";
+          console.log('[game.js] Joined room as', myColor);
+        } else {
+          // Fallback: determine by player count
+          const playerCount = Object.keys(playerInfo).length;
+          myColor = playerCount === 1 ? 'white' : 'black';
+          myTurn = (myColor === 'white');
+          statusElem.textContent = myColor === 'white' ? "Waiting for opponent" : "Joined as black";
+          console.log('[game.js] Joined room as', myColor, '(fallback logic)');
+        }
+        
+        // Load game state if available
+        if (res && res.gameState) {
+          updateFromServer(res.gameState);
+        }
+      }
+    });
+  }
+}
+
 // --- Reconnection logic ---
 socket.on('connect', () => {
-  socket.emit('joinRoom', { roomCode, playerId }, (res) => {
-    if (res && res.error) {
-      statusElem.textContent = res.error;
-      setTimeout(() => window.location = "lobby.html", 2000);
-    }
-    // If res.gameState is sent, restore it
-    if (res && res.gameState) {
-      updateFromServer(res.gameState);
-    }
-  });
+  if (!gameCreated) {
+    initGame();
+    gameCreated = true;
+  } else {
+    // Reconnect to existing room
+    socket.emit('joinRoom', { roomCode, playerId }, (res) => {
+      if (res && res.error) {
+        statusElem.textContent = res.error;
+      }
+      if (res && res.gameState) {
+        updateFromServer(res.gameState);
+      }
+    });
+  }
 });
 
 socket.on('move', (newState) => {
