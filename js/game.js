@@ -907,8 +907,10 @@ function checkGameOver() {
 socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   myAssignedColor = colorAssignments ? colorAssignments[socket.id] : myColor;
   myRole = roles ? roles[socket.id] : null;
-  myColor = myAssignedColor || myColor;
-  myTurn = (myColor === 'white');
+  if (myAssignedColor) {
+    myColor = myAssignedColor;
+    myTurn = (myColor === 'white');
+  }
   sessionStorage.setItem('myAssignedColor', myAssignedColor);
   sessionStorage.setItem('myRole', myRole);
   sessionStorage.setItem('startFirstTurn', firstTurn);
