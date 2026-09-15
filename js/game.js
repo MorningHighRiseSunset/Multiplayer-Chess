@@ -277,7 +277,9 @@ function showPromotionBox(color, cb) {
 function getColor(piece) { return piece ? piece[0] : null; }
 function getType(piece) { return piece ? piece[1] : null; }
 function isOwnPiece(piece) {
-  return piece && ((myColor === "white" && piece[0] === "w") || (myColor === "black" && piece[0] === "b"));
+  if (!piece) return false;
+  const pieceColor = piece[0];
+  return pieceColor === (myColor === "white" ? "w" : "b");
 }
 function isOpponentPiece(piece) { return piece && !isOwnPiece(piece); }
 function cloneBoard(b) { return b.map(row => row.slice()); }
@@ -404,8 +406,10 @@ function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
   const moves = [];
   const piece = b[r][c];
   if (!piece) return moves;
+  console.log('[getLegalMovesForPiece] Getting moves for piece at', r, c, piece, 'turn:', turn);
   for (let tr = 0; tr < 8; tr++) for (let tc = 0; tc < 8; tc++) {
     if ((r !== tr || c !== tc) && isLegalMove(r, c, tr, tc, b, turn, castling, enPassant)) {
+      console.log('[getLegalMovesForPiece] Found legal move from', r, c, 'to', tr, tc);
       // Simulate move and check for self-check
       let b2 = cloneBoard(b);
       let movedPiece = b2[r][c];
@@ -444,9 +448,15 @@ function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
           if (isLegalMove(i, j, kingR, kingC, b2, getColor(b2[i][j]), castling, enPassant)) inCheck = true;
         }
       }
-      if (!inCheck) moves.push([tr, tc]);
+      if (!inCheck) {
+        moves.push([tr, tc]);
+        console.log('[getLegalMovesForPiece] Added legal move to', tr, tc);
+      } else {
+        console.log('[getLegalMovesForPiece] Move to', tr, tc, 'would leave king in check');
+      }
     }
   }
+  console.log('[getLegalMovesForPiece] Final legal moves:', moves);
   return moves;
 }
 
@@ -742,6 +752,8 @@ function jumpToMove(idx) {
 
 // --- Pre-move support ---
 function handleSquareClick(r, c) {
+  console.log('[handleSquareClick] Clicked square:', r, c, 'myTurn:', myTurn, 'selected:', selected, 'piece:', gameState.board[r][c]);
+  
   if (animating || gameOver) return;
   const board = gameState.board;
   const piece = board[r][c];
@@ -769,26 +781,48 @@ function handleSquareClick(r, c) {
       if (piece && isOwnPiece(piece)) {
         selected = [r, c];
         legalMoves = getLegalMovesForPiece(r, c, board, gameState.turn, gameState.castling, gameState.enPassant);
+        console.log('[handleSquareClick] Selected piece at', r, c, 'legalMoves:', legalMoves);
+        console.log('[handleSquareClick] selected array:', selected, 'selected[0]:', selected[0], 'selected[1]:', selected[1]);
         renderBoard();
       }
       return;
     }
   // Only allow clicking on legal moves
-  if (!legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
+  console.log('[handleSquareClick] Checking if clicked square', r, c, 'is in legalMoves:', legalMoves);
+  const isLegalMove = legalMoves.some(([tr, tc]) => tr === r && tc === c);
+  console.log('[handleSquareClick] isLegalMove result:', isLegalMove, 'for square', r, c);
+  if (!isLegalMove) {
+    console.log('[handleSquareClick] Not a legal move, clearing selection. legalMoves:', legalMoves);
     selected = null;
     legalMoves = [];
     renderBoard();
     return;
   }
+  
+  // Execute the move
+  console.log('[handleSquareClick] Executing move from', selected, 'to', [r, c]);
   const [fromR, fromC] = selected;
   const move = {
-    from: [fromR, fromC],
-    to: [r, c],
+    from: [Number(fromR), Number(fromC)],
+    to: [Number(r), Number(c)],
     promotion: null
   };
+  console.log('[handleSquareClick] Move object:', move);
+  
+  // Execute move locally immediately
+  const movedPiece = board[fromR][fromC];
+  board[r][c] = movedPiece;
+  board[fromR][fromC] = null;
+  gameState.turn = (gameState.turn === 'w' ? 'b' : 'w');
+  gameState.history.push({ from: move.from, to: move.to, piece: movedPiece, captured: null });
+  lastMove = { from: move.from, to: move.to };
+  myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
+  statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+  
   // Promotion
-  if (getType(board[fromR][fromC]) === "P" && (r === 0 || r === 7)) {
-    showPromotionBox(getColor(board[fromR][fromC]), (type) => {
+  if (getType(board[r][c]) === "P" && (r === 0 || r === 7)) {
+    showPromotionBox(getColor(board[r][c]), (type) => {
+      board[r][c] = getColor(board[r][c]) + type.toUpperCase();
       move.promotion = type;
       sendMove(move);
     });
@@ -797,6 +831,8 @@ function handleSquareClick(r, c) {
   }
   selected = null;
   legalMoves = [];
+  console.log('[handleSquareClick] Move executed locally and sent to server');
+  renderBoard();
 }
 
 function sendMove(move) {
@@ -927,7 +963,7 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   sessionStorage.setItem('myAssignedColor', myAssignedColor);
   sessionStorage.setItem('myRole', myRole);
   sessionStorage.setItem('startFirstTurn', firstTurn);
-  console.log('[game.js] Game started as', myColor, myRole);
+  console.log('[game.js] Game started as', myColor, myRole, 'myTurn:', myTurn);
   statusElem.textContent = myTurn ? "Your turn (white)" : "Opponent's turn (black)";
   
   // Ensure gameState is properly initialized
@@ -943,6 +979,7 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
     console.log('[game.js] Reinitialized gameState board');
   }
   
+  console.log('[game.js] gameState.turn:', gameState.turn, 'myColor:', myColor, 'myTurn:', myTurn);
   renderBoard();
 });
 
