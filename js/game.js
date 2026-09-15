@@ -599,6 +599,19 @@ function requestGameState() {
 // --- Render board with last move highlight, pre-move highlight, and check highlight ---
 function renderBoard() {
   try {
+    // Ensure gameState and board are properly initialized
+    if (!gameState || !gameState.board || gameState.board.length === 0) {
+      console.log('[renderBoard] gameState or board not initialized, initializing now');
+      gameState.board = JSON.parse(JSON.stringify(initialBoard));
+      gameState.turn = 'w';
+      gameState.castling = { wK: true, wQ: true, bK: true, bQ: true };
+      gameState.enPassant = null;
+      gameState.halfmoveClock = 0;
+      gameState.moveNumber = 1;
+      gameState.history = [];
+      gameState.status = null;
+    }
+    
     const board = gameState.board;
     boardElem.innerHTML = "";
 
@@ -639,13 +652,13 @@ function renderBoard() {
           sq.style.background = "#ffe082";
           sq.style.cursor = "pointer";
         }
-        if (lastMove && (
+        if (lastMove && lastMove.from && lastMove.to && (
           (lastMove.from[0] === r && lastMove.from[1] === c) ||
           (lastMove.to[0] === r && lastMove.to[1] === c)
         )) {
           sq.style.background = "#ffd54f";
         }
-        if (preMove && (
+        if (preMove && preMove.from && preMove.to && (
           (preMove.from[0] === r && preMove.from[1] === c) ||
           (preMove.to[0] === r && preMove.to[1] === c)
         )) {
@@ -916,6 +929,20 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   sessionStorage.setItem('startFirstTurn', firstTurn);
   console.log('[game.js] Game started as', myColor, myRole);
   statusElem.textContent = myTurn ? "Your turn (white)" : "Opponent's turn (black)";
+  
+  // Ensure gameState is properly initialized
+  if (!gameState.board || gameState.board.length === 0) {
+    gameState.board = JSON.parse(JSON.stringify(initialBoard));
+    gameState.turn = 'w';
+    gameState.castling = { wK: true, wQ: true, bK: true, bQ: true };
+    gameState.enPassant = null;
+    gameState.halfmoveClock = 0;
+    gameState.moveNumber = 1;
+    gameState.history = [];
+    gameState.status = null;
+    console.log('[game.js] Reinitialized gameState board');
+  }
+  
   renderBoard();
 });
 
