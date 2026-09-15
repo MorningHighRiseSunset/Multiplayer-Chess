@@ -10,32 +10,25 @@ const { randomUUID } = require('crypto');
 const videoChatRooms = new Map(); // roomCode -> { participants: Set, connections: Map }
 const userVideoInfo = new Map(); // socketId -> { roomCode, userId }
 
-// --- Redis Setup ---
-const { createClient } = require('redis');
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const redis = createClient({ url: redisUrl });
-redis.connect().then(() => {
-  console.log('Connected to Redis');
-}).catch(console.error);
-
-// --- Redis Game State Helpers (in-memory fallback) ---
+// --- Redis DISABLED - using pure in-memory storage ---
+// Redis was causing corruption issues with player data
 async function saveGame(roomCode, gameState) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 async function loadGame(roomCode) {
-  return null; // Disabled for Vercel
+  return null; // Disabled - using in-memory only
 }
 async function deleteGame(roomCode) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 async function savePlayerInfo(roomCode, info) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 async function loadPlayerInfo(roomCode) {
-  return null; // Disabled for Vercel
+  return null; // Disabled - using in-memory only
 }
 async function deletePlayerInfo(roomCode) {
-  // Disabled for Vercel
+  // Disabled - using in-memory only
 }
 
 const app = express();
@@ -99,12 +92,12 @@ const playerSockets = {};
 const roomDeleteTimeouts = {};
 
 function broadcastRoomPlayers(roomCode) {
-    // Get actual active socket IDs from playerInfo
+    // Get actual active socket IDs from playerInfo (only non-disconnected)
     const activeSockets = [];
     const playerInfoForClient = {};
     for (const [playerId, info] of Object.entries(playerInfo[roomCode] || {})) {
-        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: socketId=${info.socketId}`);
-        if (info.socketId) {
+        console.log(`[BROADCAST] Player ${playerId} in room ${roomCode}: disconnected=${info.disconnected}, socketId=${info.socketId}, color=${info.color}`);
+        if (!info.disconnected && info.socketId) {
             activeSockets.push(info.socketId);
             // Use socketId as key for client compatibility
             playerInfoForClient[info.socketId] = {
@@ -115,6 +108,7 @@ function broadcastRoomPlayers(roomCode) {
         }
     }
     console.log(`[BROADCAST] Broadcasting ${activeSockets.length} active players to room ${roomCode}:`, activeSockets);
+    console.log(`[BROADCAST] Player info for client:`, playerInfoForClient);
     io.to(roomCode).emit('roomPlayers', activeSockets, playerInfoForClient);
 }
 
@@ -341,61 +335,18 @@ io.on('connection', (socket) => {
         }
         roomCode = roomCode.toUpperCase();
 
-        // PATCH: If room not in memory, but game exists in Redis, recreate room and playerInfo
+        // Check if room exists in memory
         if (!playerInfo[roomCode]) {
-            const redisGame = await loadGame(roomCode);
-            const redisPlayerInfo = await loadPlayerInfo(roomCode);
-            if (redisGame) {
-                games[roomCode] = redisGame;
-                playerInfo[roomCode] = redisPlayerInfo || {};
-                console.log(`[PATCH] Room ${roomCode} recreated from Redis for reconnect. Players in Redis:`, Object.keys(playerInfo[roomCode]));
-            } else {
-                if (typeof callback === "function") {
-                    callback({ error: 'Room not found.' });
-                }
-                console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
-                return;
+            if (typeof callback === "function") {
+                callback({ error: 'Room not found.' });
             }
-        } else {
-            console.log(`[JOIN] Room ${roomCode} already in memory. Current players:`, Object.keys(playerInfo[roomCode]));
+            console.log(`[JOIN] Room not found: ${roomCode} by ${socket.id}`);
+            return;
         }
+        console.log(`[JOIN] Room ${roomCode} exists in memory. Current players:`, Object.keys(playerInfo[roomCode]));
 
-        // AGGRESSIVE CLEANUP: Clear room except preserve creator info if they're reconnecting
-        if (playerInfo[roomCode]) {
-            const beforeCleanup = Object.keys(playerInfo[roomCode]);
-            const isCreatorReconnecting = playerInfo[roomCode][playerId] && playerInfo[roomCode][playerId].color === 'white';
-            
-            if (isCreatorReconnecting) {
-                // Keep the creator's entry, clear others
-                const creatorInfo = playerInfo[roomCode][playerId];
-                playerInfo[roomCode] = {};
-                playerInfo[roomCode][playerId] = creatorInfo;
-                console.log(`[JOIN] Preserved creator ${playerId}, cleared other players`);
-            } else {
-                // New player joining - keep existing players, don't clear the room
-                console.log(`[JOIN] New player joining, keeping existing ${beforeCleanup.length} players`);
-            }
-            
-            const afterCleanup = Object.keys(playerInfo[roomCode]);
-            if (beforeCleanup.length !== afterCleanup.length) {
-                await savePlayerInfo(roomCode, playerInfo[roomCode]);
-            }
-        }
-
-        // Remove ghost slots and expired disconnected players
-        if (playerInfo[roomCode]) {
-            const now = Date.now();
-            const gracePeriod = 2 * 60 * 1000;
-            for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
-                if (!info.playerId) {
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Removed ghost slot ${pid} in room ${roomCode}`);
-                } else if (info.disconnected && info.disconnectedAt && now - info.disconnectedAt > gracePeriod) {
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[JOIN] Removed expired disconnected player ${pid} in room ${roomCode}`);
-                }
-            }
-        }
+        // NO CLEANUP - Keep disconnected players to allow reconnection between page navigations
+        // Only filter them out when counting for color assignment
 
         if (!playerId) playerId = socket.id;
         if (!playerInfo[roomCode]) playerInfo[roomCode] = {};
@@ -404,15 +355,27 @@ io.on('connection', (socket) => {
         let existingPlayerInfo = playerInfo[roomCode][playerId];
         let isReconnecting = !!existingPlayerInfo;
 
-        // Since we now immediately remove players on disconnect, reconnection won't happen via this logic
-        // Just treat as new player if playerId exists (shouldn't happen normally)
-        if (isReconnecting) {
-            console.log(`[JOIN] Player ${playerId} already exists in room, treating as reconnection`);
-            // Update socket ID
-            existingPlayerInfo.socketId = socket.id;
-        } else {
-            // New player - check if room is full
-            const activePlayerCount = Object.keys(playerInfo[roomCode]).length;
+        // Check if this is a true reconnection (same playerId, same socket ID, but was disconnected)
+        if (isReconnecting && existingPlayerInfo.disconnected && existingPlayerInfo.socketId === socket.id) {
+            console.log(`[JOIN] Player ${playerId} reconnecting to room ${roomCode} as ${existingPlayerInfo.color}`);
+            // Mark as connected
+            existingPlayerInfo.disconnected = false;
+            existingPlayerInfo.disconnectedAt = null;
+        } else if (isReconnecting) {
+            // Different socket ID or not disconnected - treat as new player (duplicate from localStorage)
+            console.log(`[JOIN] Duplicate playerId detected (different socket or not disconnected), treating as new player`);
+            isReconnecting = false;
+            // Delete the old entry to prevent ghost players
+            delete playerInfo[roomCode][playerId];
+            console.log(`[JOIN] Deleted old entry for duplicate playerId ${playerId}`);
+            // Generate a new unique playerId for this connection
+            playerId = randomUUID();
+            console.log(`[JOIN] Generated new playerId ${playerId} for duplicate connection`);
+        }
+
+        if (!isReconnecting) {
+            // New player - check if room is full (only count non-disconnected players)
+            const activePlayerCount = Object.values(playerInfo[roomCode]).filter(info => !info.disconnected).length;
             if (activePlayerCount >= 2) {
                 if (typeof callback === "function") {
                     callback({ error: 'Room is full.' });
@@ -430,16 +393,6 @@ io.on('connection', (socket) => {
         socket.roomCode = roomCode;
         socket.playerId = playerId;
         console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}, isReconnecting: ${isReconnecting}`);
-
-        // Save playerInfo to Redis
-        await savePlayerInfo(roomCode, playerInfo[roomCode]);
-
-        // --- Load game state from Redis (again, for safety) ---
-        const redisGame = await loadGame(roomCode);
-        if (redisGame) {
-            games[roomCode] = redisGame;
-            console.log(`[GAME] Loaded existing game for room ${roomCode}`);
-        }
 
         if (typeof callback === "function") {
             callback({ roomCode, gameState: games[roomCode], playerId, players: playerInfo[roomCode] });
@@ -511,8 +464,6 @@ io.on('connection', (socket) => {
             history: [],
             status: null
         };
-        await saveGame(roomCode, games[roomCode]);
-        await savePlayerInfo(roomCode, playerInfo[roomCode]);
         if (typeof callback === "function") {
             callback({ roomCode });
         }
@@ -531,7 +482,6 @@ io.on('connection', (socket) => {
             playerInfo[room][playerId].color = color;
         }
         playerInfo[room][playerId].socketId = socket.id;
-        await savePlayerInfo(room, playerInfo[room]);
         broadcastRoomPlayers(room);
         io.to(room).emit('roomStatus', { msg: `A player is ready (${playerInfo[room][playerId].color})` });
 
@@ -586,22 +536,19 @@ io.on('connection', (socket) => {
                     break;
                 }
             }
-            await savePlayerInfo(room, playerInfo[room]);
             broadcastRoomPlayers(room);
 
             // Count active players in this room
-            const activePlayerCount = Object.values(playerInfo[room]).filter(info => !info.disconnected).length;
+            const activePlayerCount = Object.keys(playerInfo[room]).length;
             
             // Only schedule deletion if game is over and room is empty
             if (activePlayerCount === 0 && isGameOver(room)) {
                 console.log(`[ROOM] Scheduling deletion of room ${room} in 2 hours (game over)`);
-                roomDeleteTimeouts[room] = setTimeout(async () => {
+                roomDeleteTimeouts[room] = setTimeout(() => {
                     console.log(`[ROOM] Deleting room ${room} (timeout reached, game over)`);
                     delete playerInfo[room];
                     delete roomDeleteTimeouts[room];
                     delete games[room];
-                    await deleteGame(room);
-                    await deletePlayerInfo(room);
                 }, 2 * 60 * 60 * 1000); // 2 hours
             }
         }
@@ -698,7 +645,6 @@ io.on('connection', (socket) => {
             console.log(`[GAME] Game over by stalemate in room ${roomCode}`);
         }
 
-        await saveGame(roomCode, game);
         io.to(roomCode).emit('move', game);
         console.log(`[MOVE] Move processed and broadcast for room ${roomCode}`);
     });
@@ -836,15 +782,15 @@ io.on('connection', (socket) => {
             for (const [pid, info] of Object.entries(playerInfo[roomCode])) {
                 if (info.socketId === socket.id) {
                     playerRoomCodes.push(roomCode);
-                    // Immediately remove the player instead of marking as disconnected
-                    delete playerInfo[roomCode][pid];
-                    console.log(`[DISCONNECT] Immediately removed player ${pid} from room ${roomCode}`);
+                    // Mark as disconnected instead of immediately removing
+                    info.disconnected = true;
+                    info.disconnectedAt = Date.now();
+                    console.log(`[DISCONNECT] Marked player ${pid} (color: ${info.color}) as disconnected in room ${roomCode}`);
                 }
             }
         }
         
         for (const roomCode of playerRoomCodes) {
-            await savePlayerInfo(roomCode, playerInfo[roomCode]);
             broadcastRoomPlayers(roomCode);
 
             // Count active players in this room
@@ -853,14 +799,15 @@ io.on('connection', (socket) => {
             // Only schedule deletion if game is over and room is empty
             if (activePlayerCount === 0 && isGameOver(roomCode)) {
                 console.log(`[ROOM] Scheduling deletion of room ${roomCode} in 2 hours (game over, all sockets gone)`);
-                roomDeleteTimeouts[roomCode] = setTimeout(async () => {
-                    console.log(`[ROOM] Deleting room ${roomCode} (timeout reached, game over, all sockets gone)`);
+                roomDeleteTimeouts[roomCode] = setTimeout(() => {
+                    console.log(`[ROOM] Deleting room ${room} (timeout reached, game over, all sockets gone)`);
                     delete playerInfo[roomCode];
                     delete roomDeleteTimeouts[roomCode];
                     delete games[roomCode];
-                    await deleteGame(roomCode);
-                    await deletePlayerInfo(roomCode);
                 }, 2 * 60 * 60 * 1000); // 2 hours
+            } else if (activePlayerCount === 0) {
+                // Don't delete room if game is not over, even if empty
+                console.log(`[ROOM] Room ${roomCode} is empty but game not over, keeping room alive`);
             }
         }
     });
