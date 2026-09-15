@@ -936,6 +936,7 @@ socket.on('rematch', (newState) => {
 
 // --- Copy link button ---
 const copyLinkBtn = document.getElementById('copy-link-btn');
+const urlInput = document.getElementById('url-input');
 if (copyLinkBtn) {
   copyLinkBtn.onclick = () => {
     const link = window.location.href;
@@ -944,6 +945,16 @@ if (copyLinkBtn) {
     setTimeout(() => copyLinkBtn.textContent = "Copy Link", 1200);
   };
 }
+
+// Update visible URL
+function updateVisibleUrl() {
+  if (urlInput) {
+    urlInput.value = window.location.href;
+  }
+}
+
+// Update URL initially
+updateVisibleUrl();
 
 // --- New game button ---
 const newGameBtn = document.getElementById('new-game-btn');
@@ -958,12 +969,14 @@ function initGame() {
   if (!roomCode) {
     // No room code - create new game as white
     statusElem.textContent = "Creating game...";
-    socket.emit('createRoom', ({ roomCode: newRoomCode }) => {
+    socket.emit('createRoom', { playerId }, ({ roomCode: newRoomCode }) => {
       if (newRoomCode) {
         // Update URL with room code
         const newUrl = new URL(window.location);
         newUrl.searchParams.set('room', newRoomCode);
         window.history.replaceState({}, '', newUrl);
+        // Update visible URL
+        updateVisibleUrl();
         // Join the room as white
         socket.emit('joinRoom', { roomCode: newRoomCode, playerId }, (res) => {
           if (res && res.error) {

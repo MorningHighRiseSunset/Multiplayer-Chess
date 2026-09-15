@@ -41,6 +41,35 @@ body, html {
   margin: 0;
 }
 
+.game-url {
+  background: #232b39;
+  border: 1.5px solid #ffe082;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+#url-text {
+  color: #ffe082;
+  font-size: 0.9em;
+  display: block;
+  margin-bottom: 8px;
+}
+
+#url-input {
+  width: 100%;
+  max-width: 400px;
+  padding: 8px 12px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #1a1f2b;
+  color: #fff;
+  font-size: 0.9em;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 .game-actions {
   display: flex;
   gap: 12px;
