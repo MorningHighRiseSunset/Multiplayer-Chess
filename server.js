@@ -216,7 +216,8 @@ function isLegalMove(fromR, fromC, toR, toC, b, turn, castling, enPassant) {
         if (dc === 0 && dr === 2*dir && fromR === startRow && !dest && !b[fromR+dir][fromC]) return true;
         // Capture
         if (Math.abs(dc) === 1 && dr === dir && dest && getColor(dest) !== color) return true;
-        // TODO: En passant
+        // En passant
+        if (Math.abs(dc) === 1 && dr === dir && !dest && enPassant && enPassant[0] === toR && enPassant[1] === toC) return true;
         return false;
     }
     // KNIGHT
@@ -576,14 +577,28 @@ io.on('connection', (socket) => {
         const [toR, toC] = move.to;
         const piece = board[fromR][fromC];
 
+        console.log(`[MOVE] Game state before move - turn: ${turn}, piece: ${piece}, from: [${fromR},${fromC}], to: [${toR},${toC}]`);
+
         // Validate move
         const castling = getCastlingRights(game, color);
-        if (!piece || getColor(piece) !== color) return;
-        if (!isLegalMove(fromR, fromC, toR, toC, board, color, castling, game.enPassant)) return;
+        if (!piece || getColor(piece) !== color) {
+            console.log(`[MOVE] Move rejected: Invalid piece or color. piece: ${piece}, color: ${color}`);
+            return;
+        }
+        if (!isLegalMove(fromR, fromC, toR, toC, board, color, castling, game.enPassant)) {
+            console.log(`[MOVE] Move rejected: Illegal move according to server validation`);
+            return;
+        }
+        console.log(`[MOVE] Move validation passed`);
 
         // Simulate move and check for self-check
         let b2 = cloneBoard(board);
         let movedPiece = b2[fromR][fromC];
+
+        // Handle en passant capture
+        if (getType(movedPiece) === "P" && toC !== fromC && !b2[toR][toC]) {
+            b2[fromR][toC] = null;
+        }
 
         // Pawn promotion
         if (
@@ -634,7 +649,22 @@ io.on('connection', (socket) => {
         // Move is legal, update game state
         game.board = b2;
         game.turn = (turn === 'w' ? 'b' : 'w');
-        game.history.push({ from: move.from, to: move.to, piece, captured: board[toR][toC] });
+        
+        // Handle en passant target setting
+        if (getType(movedPiece) === "P" && Math.abs(toR - fromR) === 2) {
+            game.enPassant = [(fromR + toR) / 2, fromC];
+        } else {
+            game.enPassant = null;
+        }
+        
+        // Handle en passant capture in history
+        let captured = board[toR][toC];
+        if (getType(movedPiece) === "P" && toC !== fromC && !captured) {
+            // This was an en passant capture - the captured pawn is at [fromR][toC]
+            captured = board[fromR][toC];
+        }
+        
+        game.history.push({ from: move.from, to: move.to, piece, captured });
 
         // Check for checkmate/stalemate
         const oppColor = game.turn;
@@ -648,7 +678,8 @@ io.on('connection', (socket) => {
         }
 
         io.to(roomCode).emit('move', game);
-        console.log(`[MOVE] Move processed and broadcast for room ${roomCode}`);
+        console.log(`[MOVE] Move processed and broadcast for room ${roomCode}. New turn: ${game.turn}`);
+        console.log(`[MOVE] Room ${roomCode} members:`, io.sockets.adapter.rooms.get(roomCode));
     });
 
     socket.on('chatMessage', ({ room, msg }) => {

@@ -11,18 +11,43 @@ body, html {
 .game-container {
   display: flex;
   flex-direction: row;
-  align-items: center;
-  justify-content: center;
   min-height: 100vh;
-  gap: 24px;
   padding: 20px;
+  gap: 20px;
 }
 
 .game-left {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 18px;
+  gap: 12px;
+  padding: 10px;
+  min-width: 300px;
+  align-self: flex-start;
+}
+
+.game-right {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.game-board-container {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  flex: 1;
+}
+
+.game-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 280px;
+  align-self: flex-start;
 }
 
 .game-header {
@@ -30,9 +55,8 @@ body, html {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  max-width: 600px;
+  max-width: 800px;
   padding: 0 20px;
-  margin-bottom: 10px;
 }
 
 .game-header h1 {
@@ -46,7 +70,6 @@ body, html {
   border: 1.5px solid #ffe082;
   border-radius: 8px;
   padding: 12px 16px;
-  margin-bottom: 12px;
   text-align: center;
 }
 
@@ -96,8 +119,8 @@ body, html {
 }
 
 #chess3d {
-  width: 384px;
-  height: 384px;
+  width: 480px;
+  height: 480px;
   display: grid;
   grid-template: repeat(8, 1fr) / repeat(8, 1fr);
   box-shadow: 0 20px 40px #0008;
@@ -177,16 +200,15 @@ body, html {
 
 /* Move history panel */
 #move-history {
-  width: 180px;
+  width: 100%;
   background: #232323;
   border: 1.5px solid #ffe082;
   border-radius: 10px;
   box-shadow: 0 4px 16px #0007;
   padding: 10px;
-  margin: 18px 0;
   font-size: 1em;
   color: #ffe082;
-  max-height: 384px;
+  max-height: 300px;
   overflow-y: auto;
 }
 #move-history-list a {
@@ -200,7 +222,6 @@ body, html {
 
 /* Game controls panel */
 #game-controls {
-  margin: 18px 0;
   display: flex;
   gap: 12px;
 }
@@ -221,7 +242,6 @@ body, html {
 }
 
 #game-status {
-  margin-top: 18px;
   font-size: 1.2em;
   color: #ffe082;
   min-height: 28px;
@@ -252,8 +272,8 @@ body, html {
 
 /* Chat box styles */
 .chat-card {
-  width: 340px;
-  height: 500px;
+  width: 100%;
+  height: 400px;
   background: #232323;
   border-radius: 10px;
   box-shadow: 0 4px 16px #0007;
@@ -318,4 +338,56 @@ body, html {
 .chat-send:hover {
   background: #ffd54f;
   color: #111;
+}
+
+/* Responsive layout */
+@media (max-width: 900px) {
+  .game-right {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .game-sidebar {
+    width: 100%;
+    min-width: auto;
+    max-width: 480px;
+  }
+  
+  .chat-card {
+    height: 300px;
+  }
+  
+  #move-history {
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 600px) {
+  .game-container {
+    flex-direction: column;
+    padding: 10px;
+  }
+  
+  .game-left {
+    min-width: auto;
+    width: 100%;
+  }
+  
+  .game-right {
+    width: 100%;
+  }
+  
+  .game-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .game-actions {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  #url-input {
+    max-width: 100%;
+  }
 }

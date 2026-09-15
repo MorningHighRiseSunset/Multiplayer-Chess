@@ -90,6 +90,14 @@ function addResponsiveStyles() {
         min-width: 240px;
         min-height: 240px;
       }
+      .game-right {
+        flex-direction: column;
+        align-items: center;
+      }
+      .game-sidebar {
+        width: 98vw;
+        min-width: auto;
+      }
       #move-history, #game-controls {
         width: 98vw !important;
         max-width: 98vw !important;
@@ -99,6 +107,9 @@ function addResponsiveStyles() {
       #move-history {
         max-height: 120px !important;
         overflow-y: auto;
+      }
+      .chat-card {
+        height: 300px;
       }
     }
     #promotion-modal, #castling-modal {
@@ -115,19 +126,23 @@ let moveHistoryElem = document.getElementById('move-history');
 if (!moveHistoryElem) {
   moveHistoryElem = document.createElement('div');
   moveHistoryElem.id = 'move-history';
-  moveHistoryElem.style.width = '180px';
+  moveHistoryElem.style.width = '100%';
   moveHistoryElem.style.background = '#232323';
   moveHistoryElem.style.border = '1.5px solid #ffe082';
   moveHistoryElem.style.borderRadius = '10px';
   moveHistoryElem.style.boxShadow = '0 4px 16px #0007';
   moveHistoryElem.style.padding = '10px';
-  moveHistoryElem.style.margin = '18px 0';
   moveHistoryElem.style.fontSize = '1em';
   moveHistoryElem.style.color = '#ffe082';
-  moveHistoryElem.style.maxHeight = '384px';
+  moveHistoryElem.style.maxHeight = '300px';
   moveHistoryElem.style.overflowY = 'auto';
   moveHistoryElem.innerHTML = '<b>Move History</b><div id="move-history-list"></div>';
-  boardElem.parentNode.insertBefore(moveHistoryElem, boardElem.nextSibling);
+  const sidebar = document.querySelector('.game-sidebar');
+  if (sidebar) {
+    sidebar.insertBefore(moveHistoryElem, sidebar.firstChild);
+  } else {
+    boardElem.parentNode.insertBefore(moveHistoryElem, boardElem.nextSibling);
+  }
 }
 
 // --- Resign/Draw/Rematch buttons ---
@@ -135,10 +150,15 @@ let controlPanel = document.getElementById('game-controls');
 if (!controlPanel) {
   controlPanel = document.createElement('div');
   controlPanel.id = 'game-controls';
-  controlPanel.style.margin = '18px 0';
   controlPanel.style.display = 'flex';
   controlPanel.style.gap = '12px';
-  boardElem.parentNode.insertBefore(controlPanel, moveHistoryElem.nextSibling);
+  // Find game-top and insert controls there
+  const gameTop = document.querySelector('.game-top');
+  if (gameTop) {
+    gameTop.appendChild(controlPanel);
+  } else {
+    boardElem.parentNode.insertBefore(controlPanel, boardElem);
+  }
 }
 if (!document.getElementById('resign-btn')) {
   const resignBtn = document.createElement('button');
@@ -156,7 +176,9 @@ if (!document.getElementById('resign-btn')) {
       socket.emit('resign', { roomCode });
     }
   };
-  controlPanel.appendChild(resignBtn);
+  if (controlPanel) {
+    controlPanel.appendChild(resignBtn);
+  }
 }
 if (!document.getElementById('draw-btn')) {
   const drawBtn = document.createElement('button');
@@ -172,7 +194,9 @@ if (!document.getElementById('draw-btn')) {
   drawBtn.onclick = () => {
     if (!gameOver) socket.emit('offerDraw', { roomCode });
   };
-  controlPanel.appendChild(drawBtn);
+  if (controlPanel) {
+    controlPanel.appendChild(drawBtn);
+  }
 }
 
 if (!document.getElementById('rematch-btn')) {
@@ -191,7 +215,9 @@ if (!document.getElementById('rematch-btn')) {
     socket.emit('rematch', { roomCode });
     rematchBtn.style.display = 'none';
   };
-  controlPanel.appendChild(rematchBtn);
+  if (controlPanel) {
+    controlPanel.appendChild(rematchBtn);
+  }
 }
 
 // --- Add Reconnect Button ---
@@ -219,7 +245,9 @@ if (!document.getElementById('reconnect-btn')) {
       }
     });
   };
-  controlPanel.appendChild(reconnectBtn);
+  if (controlPanel) {
+    controlPanel.appendChild(reconnectBtn);
+  }
 }
 
 function showRematchBtn() {
@@ -836,16 +864,19 @@ function handleSquareClick(r, c) {
 }
 
 function sendMove(move) {
+  console.log('[game.js] Sending move to server:', move, 'roomCode:', roomCode);
   socket.emit('move', { move, roomCode });
 }
 
 // --- Animate on move from server ---
 function updateFromServer(newState) {
+  console.log('[game.js] updateFromServer called with new state:', newState);
   // Animate if move
   let prevBoard = gameState.board;
   let prevHistory = gameState.history || [];
   let newHistory = newState.history || [];
   let move = null;
+  console.log('[game.js] History lengths - prev:', prevHistory.length, 'new:', newHistory.length);
   if (newHistory.length > prevHistory.length) {
     move = newHistory[newHistory.length - 1];
     // Try to parse move for animation
@@ -1001,7 +1032,7 @@ socket.on('rematch', (newState) => {
 // --- Copy link button ---
 const copyLinkBtn = document.getElementById('copy-link-btn');
 const urlInput = document.getElementById('url-input');
-if (copyLinkBtn) {
+if (copyLinkBtn && urlInput) {
   copyLinkBtn.onclick = () => {
     const link = window.location.href;
     navigator.clipboard.writeText(link);
@@ -1012,6 +1043,7 @@ if (copyLinkBtn) {
 
 // Update visible URL
 function updateVisibleUrl() {
+  const urlInput = document.getElementById('url-input');
   if (urlInput) {
     urlInput.value = window.location.href;
   }
@@ -1039,6 +1071,8 @@ function initGame() {
         const newUrl = new URL(window.location);
         newUrl.searchParams.set('room', newRoomCode);
         window.history.replaceState({}, '', newUrl);
+        // Update roomCode variable
+        roomCode = newRoomCode;
         // Update visible URL
         updateVisibleUrl();
         // Join the room as white
@@ -1112,6 +1146,8 @@ socket.on('connect', () => {
 });
 
 socket.on('move', (newState) => {
+  console.log('[game.js] Received move from server:', newState);
+  console.log('[game.js] Current gameState.turn:', gameState.turn, 'New state turn:', newState.turn);
   updateFromServer(newState);
 });
 
@@ -1160,16 +1196,16 @@ statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
 
 // --- Chat logic ---
 const chatForm = document.getElementById('chat-form');
-const chatInput = document.getElementById('chat-input');
+const chatInputEl = document.getElementById('chat-input');
 const chatMessages = document.getElementById('chat-messages');
 
-if (chatForm && chatInput && chatMessages) {
+if (chatForm && chatInputEl && chatMessages) {
   chatForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const msg = chatInput.value.trim();
+    const msg = chatInputEl.value.trim();
     if (msg) {
       socket.emit('chatMessage', { room: roomCode, msg });
-      chatInput.value = '';
+      chatInputEl.value = '';
     }
   });
 

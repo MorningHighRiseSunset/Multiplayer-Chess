@@ -33,21 +33,27 @@
         <span id="url-text">Share this URL with your opponent:</span>
         <input type="text" id="url-input" readonly value="">
       </div>
-      <div id="chess3d"></div>
       <div id="game-status"></div>
       <div id="game-controls"></div>
-      <div id="move-history">
-        <b>Move History</b>
-        <div id="move-history-list"></div>
-      </div>
     </div>
-    <div class="chat-card">
-      <div class="chat-header">Game Chat</div>
-      <div class="chat-messages" id="chat-messages"></div>
-      <form class="chat-form" id="chat-form">
-        <input class="chat-input" id="chat-input" type="text" placeholder="Type a message..." maxlength="200" autocomplete="off" />
-        <button type="submit" class="chat-send">Send</button>
-      </form>
+    <div class="game-right">
+      <div class="game-sidebar">
+        <div id="move-history">
+          <b>Move History</b>
+          <div id="move-history-list"></div>
+        </div>
+        <div class="chat-card">
+          <div class="chat-header">Game Chat</div>
+          <div class="chat-messages" id="chat-messages"></div>
+          <form class="chat-form" id="chat-form">
+            <input class="chat-input" id="chat-input" type="text" placeholder="Type a message..." maxlength="200" autocomplete="off" />
+            <button type="submit" class="chat-send">Send</button>
+          </form>
+        </div>
+      </div>
+      <div class="game-board-container">
+        <div id="chess3d"></div>
+      </div>
     </div>
   </div>
 
