@@ -7,7 +7,7 @@ if (!playerId) {
 
 const socket = io('https://multiplayer-chess-exdx.onrender.com');
 const urlParams = new URLSearchParams(window.location.search);
-const roomCode = urlParams.get('room');
+let roomCode = urlParams.get('room');
 let myColor = null; // Will be set by server
 let gameCreated = false;
 
@@ -49,7 +49,10 @@ let animationFrame = null;
 let animationData = null;
 let myAssignedColor = null;
 let myRole = null;
-const boardElem = document.getElementById('chess3d');
+let boardElem = document.getElementById('chess3d');
+if (!boardElem) {
+  boardElem = document.querySelector('.game-board-container');
+}
 const statusElem = document.getElementById('game-status');
 
 // Video chat instance
@@ -62,33 +65,18 @@ function addResponsiveStyles() {
   style.id = 'responsive-chess-style';
   style.innerHTML = `
     #chess3d {
-      display: grid;
-      grid-template-columns: repeat(8, 1fr);
-      width: 480px;
-      height: 480px;
+      width: 900px;
+      height: 675px;
       max-width: 98vw;
-      max-height: 98vw;
-      aspect-ratio: 1/1;
       margin: 0 auto;
       touch-action: manipulation;
     }
-    .square {
-      font-size: 2em;
-      user-select: none;
-      min-width: 0;
-      min-height: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s;
-      aspect-ratio: 1/1;
-    }
-    @media (max-width: 600px) {
+    @media (max-width: 950px) {
       #chess3d {
         width: 98vw;
-        height: 98vw;
-        min-width: 240px;
-        min-height: 240px;
+        height: 73.5vw; /* Maintain 4:3 aspect ratio */
+        min-width: 350px;
+        min-height: 262.5px;
       }
       .game-right {
         flex-direction: column;
@@ -173,24 +161,7 @@ if (!document.getElementById('resign-btn')) {
   };
   controlPanel.appendChild(resignBtn);
 }
-if (!document.getElementById('draw-btn')) {
-  const drawBtn = document.createElement('button');
-  drawBtn.id = 'draw-btn';
-  drawBtn.textContent = 'Draw';
-  drawBtn.style.background = '#ffe082';
-  drawBtn.style.color = '#222';
-  drawBtn.style.fontWeight = 'bold';
-  drawBtn.style.border = 'none';
-  drawBtn.style.borderRadius = '8px';
-  drawBtn.style.padding = '8px 18px';
-  drawBtn.style.cursor = 'pointer';
-  drawBtn.onclick = () => {
-    if (!gameOver) socket.emit('offerDraw', { roomCode });
-  };
-  if (controlPanel) {
-    controlPanel.appendChild(drawBtn);
-  }
-}
+
 
 if (!document.getElementById('rematch-btn')) {
   const rematchBtn = document.createElement('button');
@@ -427,10 +398,8 @@ function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
   const moves = [];
   const piece = b[r][c];
   if (!piece) return moves;
-  console.log('[getLegalMovesForPiece] Getting moves for piece at', r, c, piece, 'turn:', turn);
   for (let tr = 0; tr < 8; tr++) for (let tc = 0; tc < 8; tc++) {
     if ((r !== tr || c !== tc) && isLegalMove(r, c, tr, tc, b, turn, castling, enPassant)) {
-      console.log('[getLegalMovesForPiece] Found legal move from', r, c, 'to', tr, tc);
       // Simulate move and check for self-check
       let b2 = cloneBoard(b);
       let movedPiece = b2[r][c];
@@ -471,13 +440,9 @@ function getLegalMovesForPiece(r, c, b, turn, castling, enPassant) {
       }
       if (!inCheck) {
         moves.push([tr, tc]);
-        console.log('[getLegalMovesForPiece] Added legal move to', tr, tc);
-      } else {
-        console.log('[getLegalMovesForPiece] Move to', tr, tc, 'would leave king in check');
       }
     }
   }
-  console.log('[getLegalMovesForPiece] Final legal moves:', moves);
   return moves;
 }
 
@@ -525,14 +490,8 @@ function animateMove(from, to, piece, cb) {
 }
 
 function getSquareElem(r, c) {
-  // r,c are board coordinates (0-7, 0-7)
-  let idx;
-  if (myColor === "white") {
-    idx = r * 8 + c;
-  } else {
-    idx = (7 - r) * 8 + (7 - c);
-  }
-  return boardElem.children[idx];
+  // Not used with 3D board
+  return null;
 }
 
 // --- Check/Checkmate Highlight ---
@@ -627,92 +586,221 @@ function requestGameState() {
   });
 }
 
-// --- Render board with last move highlight, pre-move highlight, and check highlight ---
+// --- 3D Board Setup using ChessBoard3 ---
+let chessBoard3 = null;
+let board3DInitialized = false;
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let selectedSquare = null;
+let moveInProgress = false;
+
+function boardToFEN(board) {
+  if (!board) return 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+  
+  let fen = '';
+  for (let r = 0; r < 8; r++) {
+    let emptyCount = 0;
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (piece) {
+        if (emptyCount > 0) {
+          fen += emptyCount;
+          emptyCount = 0;
+        }
+        const color = piece[0];
+        const type = piece[1];
+        if (color === 'w') {
+          fen += type;
+        } else {
+          fen += type.toLowerCase();
+        }
+      } else {
+        emptyCount++;
+      }
+    }
+    if (emptyCount > 0) {
+      fen += emptyCount;
+    }
+    if (r < 7) fen += '/';
+  }
+  return fen;
+}
+
+function init3DBoard() {
+  if (board3DInitialized) return;
+  
+  const boardElem = document.getElementById('chess3d');
+  if (!boardElem) return;
+  
+  boardElem.innerHTML = '';
+  
+  const config = {
+    position: 'start',
+    draggable: true,
+    pieceSet: '3d-chess-files/assets/chesspieces/classic/{piece}.json',
+    cameraControls: true,
+    rotateControls: false,
+    zoomControls: true,
+    showErrors: 'console',
+    backgroundColor: null,
+    orientation: myColor === 'white' ? 'white' : 'black',
+    onDragStart: function(source, piece, position, orientation) {
+      console.log('Drag start - source:', source, 'piece:', piece, 'myTurn:', myTurn, 'gameOver:', gameOver);
+      if (gameOver) return false;
+      if (!myTurn) return false;
+      const pieceColor = piece[0];
+      const mySide = myColor === 'white' ? 'w' : 'b';
+      if (pieceColor !== mySide) return false;
+      return true;
+    },
+    onDrop: function(source, target) {
+      console.log('Drop - source:', source, 'target:', target);
+      const fromCol = source.charCodeAt(0) - 97;
+      const fromRow = 8 - parseInt(source[1]);
+      const toCol = target.charCodeAt(0) - 97;
+      const toRow = 8 - parseInt(target[1]);
+      
+      const piece = gameState.board[fromRow][fromCol];
+      if (!piece) return 'snapback';
+      
+      const legalMoves = getLegalMovesForPiece(fromRow, fromCol, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
+      const isLegal = legalMoves.some(([r, c]) => r === toRow && c === toCol);
+      
+      if (!isLegal) return 'snapback';
+      
+      const move = {
+        from: [fromRow, fromCol],
+        to: [toRow, toCol],
+        promotion: null
+      };
+      
+      moveInProgress = true;
+      
+      if (getType(piece) === "P" && (toRow === 0 || toRow === 7)) {
+        showPromotionBox(getColor(piece), (type) => {
+          move.promotion = type;
+          sendMove(move);
+        });
+        return 'snapback';
+      } else {
+        sendMove(move);
+      }
+      
+      return 'snapback';
+    }
+  };
+  
+  chessBoard3 = new ChessBoard3('chess3d', config);
+  board3DInitialized = true;
+  
+  setTimeout(() => {
+    chessBoard3.resize();
+    if (chessBoard3 && chessBoard3.camera) {
+      chessBoard3.camera.position.set(0, 10, 14);
+      chessBoard3.camera.lookAt(new THREE.Vector3(0, 0, 0));
+    }
+    if (chessBoard3 && chessBoard3.renderer && chessBoard3.renderer.domElement) {
+      chessBoard3.renderer.domElement.addEventListener('click', onBoardClick3D, false);
+    }
+  }, 100);
+}
+
+function onBoardClick3D(event) {
+  console.log('Board clicked - myTurn:', myTurn, 'gameOver:', gameOver, 'gameState:', !!gameState);
+  
+  if (!chessBoard3 || !chessBoard3.scene || !chessBoard3.camera || !chessBoard3.renderer) {
+    console.log('Board not ready');
+    return;
+  }
+  if (gameOver || !myTurn) {
+    console.log('Cannot move - gameOver:', gameOver, 'myTurn:', myTurn);
+    return;
+  }
+  if (!gameState || !gameState.board) {
+    console.log('No game state');
+    return;
+  }
+  if (moveInProgress) {
+    console.log('Move in progress');
+    return;
+  }
+  
+  const rect = chessBoard3.renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  
+  raycaster.setFromCamera(mouse, chessBoard3.camera);
+  
+  const intersects = raycaster.intersectObjects(chessBoard3.scene.children, true);
+  console.log('Raycast intersects:', intersects.length);
+  
+  if (intersects.length > 0) {
+    for (const intersect of intersects) {
+      if (intersect.object.userData && intersect.object.userData.tag) {
+        const square = intersect.object.userData.tag;
+        const col = square.charCodeAt(0) - 97;
+        const row = 8 - parseInt(square[1]);
+        console.log('Clicked square:', square, 'row:', row, 'col:', col);
+        
+        if (selectedSquare) {
+          // Try to move
+          const fromCol = selectedSquare.charCodeAt(0) - 97;
+          const fromRow = 8 - parseInt(selectedSquare[1]);
+          
+          const piece = gameState.board[fromRow][fromCol];
+          if (piece) {
+            const legalMoves = getLegalMovesForPiece(fromRow, fromCol, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
+            const isLegal = legalMoves.some(([r, c]) => r === row && c === col);
+            console.log('Move check - piece:', piece, 'isLegal:', isLegal);
+            
+            if (isLegal) {
+              const move = {
+                from: [fromRow, fromCol],
+                to: [row, col],
+                promotion: null
+              };
+              
+              moveInProgress = true;
+              
+              if (getType(piece) === "P" && (row === 0 || row === 7)) {
+                showPromotionBox(getColor(piece), (type) => {
+                  move.promotion = type;
+                  sendMove(move);
+                });
+              } else {
+                sendMove(move);
+              }
+            }
+          }
+          selectedSquare = null;
+        } else {
+          // Select piece
+          const piece = gameState.board[row][col];
+          console.log('Select piece at', row, col, ':', piece);
+          if (piece) {
+            const pieceColor = piece[0];
+            const mySide = myColor === 'white' ? 'w' : 'b';
+            console.log('Piece color:', pieceColor, 'My side:', mySide);
+            if (pieceColor === mySide) {
+              selectedSquare = square;
+              console.log('Selected square:', selectedSquare);
+            }
+          }
+        }
+        return;
+      }
+    }
+  }
+}
+
 function renderBoard() {
-  try {
-    // Ensure gameState and board are properly initialized
-    if (!gameState || !gameState.board || gameState.board.length === 0) {
-      console.log('[renderBoard] gameState or board not initialized, initializing now');
-      gameState.board = JSON.parse(JSON.stringify(initialBoard));
-      gameState.turn = 'w';
-      gameState.castling = { wK: true, wQ: true, bK: true, bQ: true };
-      gameState.enPassant = null;
-      gameState.halfmoveClock = 0;
-      gameState.moveNumber = 1;
-      gameState.history = [];
-      gameState.status = null;
-    }
-    
-    const board = gameState.board;
-    boardElem.innerHTML = "";
-
-    // Defensive: Check for missing king (board corruption)
-    const whiteKing = getKingPosition('w', board);
-    const blackKing = getKingPosition('b', board);
-    if (!whiteKing || !blackKing) {
-      statusElem.textContent = "Board error detected. Attempting auto-recovery...";
-      requestGameState();
-      return;
-    }
-
-    let checkColor = null, checkPos = null;
-    if (gameState.status !== "checkmate" && gameState.status !== "stalemate" && !gameOver) {
-      if (isKingInCheck(gameState.turn, board, gameState.castling, gameState.enPassant)) {
-        checkColor = gameState.turn;
-        checkPos = getKingPosition(checkColor, board);
-      }
-    }
-    for (let displayR = 0; displayR < 8; displayR++) {
-      for (let displayC = 0; displayC < 8; displayC++) {
-        let r = myColor === "white" ? displayR : 7 - displayR;
-        let c = myColor === "white" ? displayC : 7 - displayC;
-        const sq = document.createElement('div');
-        sq.className = 'square ' + ((displayR + displayC) % 2 ? 'black' : 'white');
-        const piece = board[r][c];
-        sq.dataset.r = r;
-        sq.dataset.c = c;
-        if (piece) {
-          sq.textContent = pieceUnicode[piece] || "";
-          sq.style.color = piece[0] === "b" ? "#222" : "#fff";
-        }
-        if (selected && selected[0] == r && selected[1] == c) {
-          sq.style.outline = "3px solid #ffe082";
-          sq.style.zIndex = 2;
-        }
-        if (Array.isArray(legalMoves) && legalMoves.some(([tr, tc]) => tr === r && tc === c)) {
-          sq.style.background = "#ffe082";
-          sq.style.cursor = "pointer";
-        }
-        if (lastMove && lastMove.from && lastMove.to && (
-          (lastMove.from[0] === r && lastMove.from[1] === c) ||
-          (lastMove.to[0] === r && lastMove.to[1] === c)
-        )) {
-          sq.style.background = "#ffd54f";
-        }
-        if (preMove && preMove.from && preMove.to && (
-          (preMove.from[0] === r && preMove.from[1] === c) ||
-          (preMove.to[0] === r && preMove.to[1] === c)
-        )) {
-          sq.style.boxShadow = "0 0 0 3px #42a5f5 inset";
-        }
-        if (
-          Array.isArray(checkPos) &&
-          checkPos.length === 2 &&
-          typeof checkPos[0] === "number" &&
-          typeof checkPos[1] === "number" &&
-          r === checkPos[0] && c === checkPos[1]
-        ) {
-          sq.style.background = "#e53935";
-          sq.style.boxShadow = "0 0 0 3px #b71c1c inset";
-        }
-        sq.onclick = () => handleSquareClick(r, c);
-        boardElem.appendChild(sq);
-      }
-    }
-  } catch (err) {
-    console.error("renderBoard error:", err);
-    statusElem.textContent = "Board error detected. Attempting auto-recovery...";
-    requestGameState();
+  if (!board3DInitialized) {
+    init3DBoard();
+  }
+  
+  if (chessBoard3 && gameState && gameState.board) {
+    const fen = boardToFEN(gameState.board);
+    chessBoard3.position(fen, false);
   }
 }
 
@@ -772,180 +860,22 @@ function jumpToMove(idx) {
 }
 
 // --- Pre-move support ---
-function handleSquareClick(r, c) {
-  console.log('[handleSquareClick] Clicked square:', r, c, 'myTurn:', myTurn, 'selected:', selected, 'piece:', gameState.board[r][c]);
-  
-  if (animating || gameOver) return;
-  const board = gameState.board;
-  const piece = board[r][c];
-  if (!myTurn) {
-    // Pre-move logic
-    if (!preMove && piece && isOwnPiece(piece)) {
-      preMove = { from: [r, c], to: null };
-      renderBoard();
-      return;
-    }
-    if (preMove && !preMove.to && !(preMove.from[0] === r && preMove.from[1] === c)) {
-      preMove.to = [r, c];
-      renderBoard();
-      return;
-    }
-    if (preMove && preMove.to && (preMove.from[0] === r && preMove.from[1] === c)) {
-      preMove = null;
-      renderBoard();
-      return;
-    }
-    return;
-  }
-  // Normal move logic
-    if (!selected) {
-      if (piece && isOwnPiece(piece)) {
-        selected = [r, c];
-        legalMoves = getLegalMovesForPiece(r, c, board, gameState.turn, gameState.castling, gameState.enPassant);
-        console.log('[handleSquareClick] Selected piece at', r, c, 'legalMoves:', legalMoves);
-        console.log('[handleSquareClick] selected array:', selected, 'selected[0]:', selected[0], 'selected[1]:', selected[1]);
-        renderBoard();
-      }
-      return;
-    }
-  // Only allow clicking on legal moves
-  console.log('[handleSquareClick] Checking if clicked square', r, c, 'is in legalMoves:', legalMoves);
-  const isLegalMove = legalMoves.some(([tr, tc]) => tr === r && tc === c);
-  console.log('[handleSquareClick] isLegalMove result:', isLegalMove, 'for square', r, c);
-  if (!isLegalMove) {
-    console.log('[handleSquareClick] Not a legal move, clearing selection. legalMoves:', legalMoves);
-    selected = null;
-    legalMoves = [];
-    renderBoard();
-    return;
-  }
-  
-  // Execute the move
-  console.log('[handleSquareClick] Executing move from', selected, 'to', [r, c]);
-  const [fromR, fromC] = selected;
-  const move = {
-    from: [Number(fromR), Number(fromC)],
-    to: [Number(r), Number(c)],
-    promotion: null
-  };
-  console.log('[handleSquareClick] Move object:', move);
-  
-  // Execute move locally immediately
-  const movedPiece = board[fromR][fromC];
-  board[r][c] = movedPiece;
-  board[fromR][fromC] = null;
-  gameState.turn = (gameState.turn === 'w' ? 'b' : 'w');
-  gameState.history.push({ from: move.from, to: move.to, piece: movedPiece, captured: null });
-  lastMove = { from: move.from, to: move.to };
-  myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
-  statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
-  
-  // Promotion
-  if (getType(board[r][c]) === "P" && (r === 0 || r === 7)) {
-    showPromotionBox(getColor(board[r][c]), (type) => {
-      board[r][c] = getColor(board[r][c]) + type.toUpperCase();
-      move.promotion = type;
-      sendMove(move);
-    });
-  } else {
-    sendMove(move);
-  }
-  selected = null;
-  legalMoves = [];
-  console.log('[handleSquareClick] Move executed locally and sent to server');
-  renderBoard();
-}
-
 function sendMove(move) {
-  console.log('[game.js] Sending move to server:', move, 'roomCode:', roomCode);
   socket.emit('move', { move, roomCode });
 }
 
-// --- Animate on move from server ---
+// --- Update board from server ---
 function updateFromServer(newState) {
-  console.log('[game.js] updateFromServer called with new state:', newState);
-  // Animate if move
-  let prevBoard = gameState.board;
-  let prevHistory = gameState.history || [];
-  let newHistory = newState.history || [];
-  let move = null;
-  console.log('[game.js] History lengths - prev:', prevHistory.length, 'new:', newHistory.length);
-  if (newHistory.length > prevHistory.length) {
-    move = newHistory[newHistory.length - 1];
-    // Try to parse move for animation
-    if (move && typeof move === "string") {
-      let m = move.match(/^([a-h][1-8])[-x]?([a-h][1-8])/);
-      if (m) {
-        let from = parseAlgebraic(m[1]);
-        let to = parseAlgebraic(m[2]);
-        let piece = prevBoard[from[0]][from[1]];
-        lastMove = { from, to };
-        animateMove(from, to, piece, () => {
-          gameState = newState;
-          myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
-          selected = null;
-          legalMoves = [];
-          renderBoard();
-          renderMoveHistory();
-          checkGameOver();
-          if (!gameOver) statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
-          // If pre-move is set and it's now our turn, try to play it
-          if (myTurn && preMove && preMove.from && preMove.to) {
-            let [fr, fc] = preMove.from, [tr, tc] = preMove.to;
-            let piece = gameState.board[fr][fc];
-            if (piece && isOwnPiece(piece)) {
-              let moves = getLegalMovesForPiece(fr, fc, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
-              if (moves.some(([r, c]) => r === tr && c === tc)) {
-                let move = { from: [fr, fc], to: [tr, tc], promotion: null };
-                if (getType(piece) === "P" && (tr === 0 || tr === 7)) {
-                  showPromotionBox(getColor(piece), (type) => {
-                    move.promotion = type;
-                    sendMove(move);
-                  });
-                } else {
-                  sendMove(move);
-                }
-              }
-            }
-            preMove = null;
-            renderBoard();
-          }
-        });
-        return;
-      }
-    }
-  }
-  // No animation fallback
   gameState = newState;
   myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
   selected = null;
   legalMoves = [];
   lastMove = null;
+  moveInProgress = false;
   renderBoard();
   renderMoveHistory();
   checkGameOver();
   if (!gameOver) statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
-  // Pre-move logic
-  if (myTurn && preMove && preMove.from && preMove.to) {
-    let [fr, fc] = preMove.from, [tr, tc] = preMove.to;
-    let piece = gameState.board[fr][fc];
-    if (piece && isOwnPiece(piece)) {
-      let moves = getLegalMovesForPiece(fr, fc, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
-      if (moves.some(([r, c]) => r === tr && c === tc)) {
-        let move = { from: [fr, fc], to: [tr, tc], promotion: null };
-        if (getType(piece) === "P" && (tr === 0 || tr === 7)) {
-          showPromotionBox(getColor(piece), (type) => {
-            move.promotion = type;
-            sendMove(move);
-          });
-        } else {
-          sendMove(move);
-        }
-      }
-    }
-    preMove = null;
-    renderBoard();
-  }
 }
 
 function checkGameOver() {
@@ -978,17 +908,23 @@ function checkGameOver() {
 
 // --- Start game event ---
 socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
+  console.log('startGame received - socket.id:', socket.id, 'colorAssignments:', colorAssignments);
+  
   myAssignedColor = colorAssignments ? colorAssignments[socket.id] : myColor;
   myRole = roles ? roles[socket.id] : null;
   if (myAssignedColor) {
     myColor = myAssignedColor;
-    myTurn = (myColor === 'white');
   }
   sessionStorage.setItem('myAssignedColor', myAssignedColor);
   sessionStorage.setItem('myRole', myRole);
   sessionStorage.setItem('startFirstTurn', firstTurn);
-  console.log('[game.js] Game started as', myColor, myRole, 'myTurn:', myTurn);
-  statusElem.textContent = myTurn ? "Your turn (white)" : "Opponent's turn (black)";
+  
+  console.log('startGame - myColor:', myColor, 'myAssignedColor:', myAssignedColor);
+  
+  // Update board orientation
+  if (chessBoard3 && myColor) {
+    chessBoard3.orientation(myColor);
+  }
   
   // Ensure gameState is properly initialized
   if (!gameState.board || gameState.board.length === 0) {
@@ -1000,10 +936,16 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
     gameState.moveNumber = 1;
     gameState.history = [];
     gameState.status = null;
-    console.log('[game.js] Reinitialized gameState board');
   }
   
-  console.log('[game.js] gameState.turn:', gameState.turn, 'myColor:', myColor, 'myTurn:', myTurn);
+  // Set myTurn based on actual game state turn (only if myColor is set)
+  if (myColor) {
+    myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
+    statusElem.textContent = myTurn ? "Your turn (white)" : "Opponent's turn (black)";
+  } else {
+    statusElem.textContent = "Waiting for color assignment...";
+  }
+  
   renderBoard();
 });
 
@@ -1015,7 +957,7 @@ socket.on('rematch', (newState) => {
   legalMoves = [];
   lastMove = null;
   gameOver = false;
-  preMove = null;
+  // preMove = null; // Not used with ChessBoard3
   renderBoard();
   renderMoveHistory();
   statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
@@ -1053,6 +995,90 @@ if (newGameBtn) {
   };
 }
 
+// --- Print moves button ---
+const printMovesBtn = document.getElementById('print-moves-btn');
+if (printMovesBtn) {
+  printMovesBtn.onclick = () => {
+    if (gameState && gameState.history && gameState.history.length > 0) {
+      const moves = gameState.history;
+      let moveText = "Chess Game Moves:\n\n";
+      
+      for (let i = 0; i < moves.length; i += 2) {
+        const moveNum = (i / 2) + 1;
+        const whiteMove = moves[i] ? moveToNotation(moves[i]) : '';
+        const blackMove = moves[i + 1] ? moveToNotation(moves[i + 1]) : '';
+        moveText += `${moveNum}. ${whiteMove} ${blackMove}\n`;
+      }
+      
+      // Create a popup to display and print moves
+      const popup = window.open('', '_blank', 'width=600,height=400');
+      popup.document.write(`
+        <html>
+        <head>
+          <title>Chess Moves</title>
+          <style>
+            body { font-family: monospace; padding: 20px; background: #222; color: #fff; }
+            pre { white-space: pre-wrap; }
+            button { margin-top: 20px; padding: 10px 20px; cursor: pointer; }
+          </style>
+        </head>
+        <body>
+          <pre>${moveText}</pre>
+          <button onclick="window.print()">Print</button>
+          <button onclick="window.close()">Close</button>
+        </body>
+        </html>
+      `);
+      popup.document.close();
+    } else {
+      alert('No moves to print yet!');
+    }
+  };
+}
+
+// --- Video chat button ---
+const videoChatBtn = document.getElementById('video-chat-btn');
+const videoChatContainer = document.getElementById('videoChatContainer');
+const minimizeVideoBtn = document.getElementById('minimizeVideo');
+
+if (videoChatBtn && videoChatContainer) {
+  videoChatBtn.onclick = () => {
+    if (videoChatContainer.style.display === 'none') {
+      videoChatContainer.style.display = 'block';
+      videoChatBtn.textContent = 'Close';
+      
+      // Initialize video chat if not already initialized
+      if (!videoChat && roomCode) {
+        videoChat = new VideoChat(socket, roomCode);
+      }
+    } else {
+      videoChatContainer.style.display = 'none';
+      videoChatBtn.textContent = 'Video Chat';
+      
+      // Leave video chat if active
+      if (videoChat) {
+        videoChat.leave();
+        videoChat = null;
+      }
+    }
+  };
+}
+
+if (minimizeVideoBtn && videoChatContainer) {
+  minimizeVideoBtn.onclick = () => {
+    videoChatContainer.classList.toggle('minimized');
+    minimizeVideoBtn.textContent = videoChatContainer.classList.contains('minimized') ? '+' : '−';
+  };
+}
+
+// --- Play computer button ---
+const playComputerBtn = document.getElementById('play-computer-btn');
+if (playComputerBtn) {
+  playComputerBtn.onclick = () => {
+    alert('Play Computer feature coming soon!');
+  };
+}
+
 // --- Game creation/joining logic ---
 function initGame() {
   if (!roomCode) {
@@ -1074,11 +1100,9 @@ function initGame() {
             statusElem.textContent = res.error;
           } else {
             myColor = 'white';
-            myTurn = true;
             statusElem.textContent = "Waiting for opponent (share the link!)";
-            console.log('[game.js] Created and joined room as white:', newRoomCode);
             
-            // Load game state if available
+            // Load game state if available - this will set myTurn correctly
             if (res && res.gameState) {
               updateFromServer(res.gameState);
             }
@@ -1094,24 +1118,10 @@ function initGame() {
         statusElem.textContent = res.error;
         setTimeout(() => window.location.href = window.location.pathname, 3000);
       } else {
-        // Determine color based on server assignment
-        const playerInfo = res.players || {};
-        const myPlayerInfo = Object.values(playerInfo).find(p => p.playerId === playerId);
-        if (myPlayerInfo) {
-          myColor = myPlayerInfo.color;
-          myTurn = (myColor === 'white');
-          statusElem.textContent = myColor === 'white' ? "Waiting for opponent" : "Joined as black";
-          console.log('[game.js] Joined room as', myColor);
-        } else {
-          // Fallback: determine by player count
-          const playerCount = Object.keys(playerInfo).length;
-          myColor = playerCount === 1 ? 'white' : 'black';
-          myTurn = (myColor === 'white');
-          statusElem.textContent = myColor === 'white' ? "Waiting for opponent" : "Joined as black";
-          console.log('[game.js] Joined room as', myColor, '(fallback logic)');
-        }
+        // Don't set color here - wait for startGame event from server
+        statusElem.textContent = "Waiting for game to start...";
         
-        // Load game state if available
+        // Load game state if available - this will set myTurn correctly
         if (res && res.gameState) {
           updateFromServer(res.gameState);
         }
@@ -1139,8 +1149,7 @@ socket.on('connect', () => {
 });
 
 socket.on('move', (newState) => {
-  console.log('[game.js] Received move from server:', newState);
-  console.log('[game.js] Current gameState.turn:', gameState.turn, 'New state turn:', newState.turn);
+  console.log('Received move from server - newState:', newState);
   updateFromServer(newState);
 });
 
@@ -1183,9 +1192,10 @@ setInterval(() => {
   }
 }, 180000); // 180000 ms = 3 minutes
 
-renderBoard();
-renderMoveHistory();
-statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+// Don't render board immediately - wait for server sync
+// renderBoard();
+// renderMoveHistory();
+// statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
 
 // --- Chat logic ---
 const chatForm = document.getElementById('chat-form');
@@ -1215,31 +1225,6 @@ if (chatForm && chatInputEl && chatMessages) {
 }
 
 // --- Video Chat Integration ---
-const videoChatToggle = document.getElementById('videoChatToggle');
-const videoChatContainer = document.getElementById('videoChatContainer');
-const minimizeVideoBtn = document.getElementById('minimizeVideo');
-
-if (videoChatToggle) {
-  videoChatToggle.addEventListener('click', () => {
-    if (!videoChat) {
-      // Start video chat
-      videoChat = new VideoChat(socket, roomCode);
-      videoChatContainer.style.display = 'block';
-      videoChatToggle.classList.add('active');
-      videoChatToggle.textContent = '📹';
-      videoChatToggle.title = 'Video chat active';
-    } else {
-      // Stop video chat
-      videoChat.leave();
-      videoChat = null;
-      videoChatContainer.style.display = 'none';
-      videoChatToggle.classList.remove('active');
-      videoChatToggle.textContent = '📹';
-      videoChatToggle.title = 'Start Video Chat';
-    }
-  });
-}
-
 if (minimizeVideoBtn) {
   minimizeVideoBtn.addEventListener('click', () => {
     videoChatContainer.classList.toggle('minimized');

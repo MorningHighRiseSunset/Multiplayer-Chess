@@ -71,6 +71,8 @@ const PORT = process.env.PORT || 3000;
 // Serve static files from css and js directories
 app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
+app.use('/pieces', express.static(path.join(__dirname, 'pieces')));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use(express.static(__dirname));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/lobby', (req, res) => res.redirect('/'));
@@ -398,13 +400,14 @@ io.on('connection', (socket) => {
         console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}, isReconnecting: ${isReconnecting}`);
 
         if (typeof callback === "function") {
-            callback({ roomCode, gameState: games[roomCode], playerId, players: playerInfo[roomCode] });
+            callback({ roomCode, playerId, players: playerInfo[roomCode] });
         }
         clearRoomDeleteTimeout(roomCode);
         broadcastRoomPlayers(roomCode);
-        if (games[roomCode]) {
-            socket.emit('move', games[roomCode]);
-        }
+        // Don't auto-send game state on join - wait for client to request it
+        // if (games[roomCode]) {
+        //     socket.emit('move', games[roomCode]);
+        // }
         socket.to(roomCode).emit('opponentReconnected');
         console.log(`[JOIN] ${socket.id} joined room ${roomCode} as playerId ${playerId}`);
 
@@ -429,13 +432,21 @@ io.on('connection', (socket) => {
                 colorAssignments[blackSocketId] = 'black';
                 roles[whiteSocketId] = 'Player 1';
                 roles[blackSocketId] = 'Player 2';
+                console.log(`[STARTGAME] Assigning colors: ${whiteSocketId} -> white, ${blackSocketId} -> black`);
             } else {
-                const socketId1 = playerInfo[roomCode][playerIds[0]].socketId;
-                const socketId2 = playerInfo[roomCode][playerIds[1]].socketId;
-                colorAssignments[socketId1] = 'white';
-                colorAssignments[socketId2] = 'black';
-                roles[socketId1] = 'Player 1';
-                roles[socketId2] = 'Player 2';
+                // Fallback: assign based on actual color in playerInfo, not just array order
+                for (const pid of playerIds) {
+                    const p = playerInfo[roomCode][pid];
+                    const socketId = p.socketId;
+                    if (p.color === 'white') {
+                        colorAssignments[socketId] = 'white';
+                        roles[socketId] = 'Player 1';
+                    } else if (p.color === 'black') {
+                        colorAssignments[socketId] = 'black';
+                        roles[socketId] = 'Player 2';
+                    }
+                }
+                console.log(`[STARTGAME] Fallback assigning by playerInfo colors:`, colorAssignments);
             }
             io.to(roomCode).emit('startGame', { colorAssignments, firstTurn, roles });
         }
@@ -455,7 +466,7 @@ io.on('connection', (socket) => {
         playerInfo[roomCode][creatorPlayerId] = { color: 'white', ready: false, playerId: creatorPlayerId, disconnected: false, socketId: socket.id };
         socket.playerId = creatorPlayerId;
         playerSockets[creatorPlayerId] = { socketId: socket.id, roomCode, disconnectedAt: null };
-        console.log(`[CREATEROOM] Created room ${roomCode} with creator ${creatorPlayerId} (socket: ${socket.id})`);
+        console.log(`[CREATEROOM] Created room ${roomCode} with creator ${creatorPlayerId} (socket: ${socket.id}) - assigned WHITE`);
         
         games[roomCode] = {
             board: JSON.parse(JSON.stringify(initialBoard)),
@@ -680,6 +691,7 @@ io.on('connection', (socket) => {
         io.to(roomCode).emit('move', game);
         console.log(`[MOVE] Move processed and broadcast for room ${roomCode}. New turn: ${game.turn}`);
         console.log(`[MOVE] Room ${roomCode} members:`, io.sockets.adapter.rooms.get(roomCode));
+        console.log(`[MOVE] Broadcasting game state with ${game.history.length} moves in history`);
     });
 
     socket.on('chatMessage', ({ room, msg }) => {

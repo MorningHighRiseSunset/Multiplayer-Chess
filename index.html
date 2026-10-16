@@ -24,18 +24,19 @@
     <div class="game-header">
       <h1>Multiplayer Chess</h1>
       <div class="game-actions">
+        <div class="game-url" id="game-url">
+          <span id="url-text">Share URL:</span>
+          <input type="text" id="url-input" readonly value="">
+        </div>
         <button id="copy-link-btn" title="Copy Invite Link">Copy Link</button>
+        <button id="play-computer-btn">Play Computer</button>
+        <button id="print-moves-btn">Print Moves</button>
         <a href="." id="new-game-btn">New Game</a>
+        <button id="video-chat-btn">Video Chat</button>
       </div>
-    </div>
-    <div class="game-url" id="game-url">
-      <span id="url-text">Share this URL with your opponent:</span>
-      <input type="text" id="url-input" readonly value="">
     </div>
     <div class="game-main">
-      <div class="game-board-container">
-        <div id="chess3d"></div>
-      </div>
+      <div id="chess3d"></div>
       <div class="game-sidebar">
         <div id="game-status"></div>
         <div id="game-controls"></div>
@@ -55,8 +56,7 @@
     </div>
   </div>
 
-  <!-- Video Chat Container (DISABLED) -->
-  <!--
+  <!-- Video Chat Container -->
   <div id="videoChatContainer" class="video-chat-container" style="display: none;">
     <div class="video-chat-header">
       <span>Video Chat</span>
@@ -77,16 +77,15 @@
     </div>
   </div>
 
-  <div id="videoChatToggle" class="video-chat-toggle-btn" title="Start Video Chat">
-    📹
-  </div>
-  -->
-
   <!-- Modals for promotion and castling (optional, JS will create if missing) -->
   <div id="promotion-modal" style="display:none"></div>
   <div id="castling-modal" style="display:none"></div>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <!-- <script src="js/video-chat.js"></script> -->
+  <!-- Three.js and ChessBoard3 for 3D pieces -->
+  <script src="3d-chess-files/three.js"></script>
+  <script src="3d-chess-files/OrbitControls.js"></script>
+  <script src="3d-chess-files/chessboard3.js"></script>
+  <script src="js/video-chat.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

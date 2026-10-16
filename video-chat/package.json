@@ -1,0 +1,26 @@
+{
+  "name": "video-chat-module",
+  "version": "1.0.0",
+  "description": "Standalone WebRTC video chat module using PeerJS",
+  "main": "video-chat.js",
+  "scripts": {
+    "test": "echo \"Open video-chat.html in browser to test\" && exit 0"
+  },
+  "keywords": [
+    "webrtc",
+    "video-chat",
+    "peerjs",
+    "peer-to-peer",
+    "video",
+    "audio",
+    "communication"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MorningHighRiseSunset/Multiplayer-Checkers"
+  }
+}

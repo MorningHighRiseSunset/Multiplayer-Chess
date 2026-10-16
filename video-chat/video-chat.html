@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Chat Module</title>
+  <link rel="stylesheet" href="video-chat.css">
+  <!-- PeerJS Library -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <div class="video-container">
+    <div class="video-content">
+      <div class="video-grid-stacked">
+        <div class="video-item">
+          <div class="video-wrapper">
+            <video id="local-video" autoplay muted playsinline></video>
+            <div id="local-placeholder" class="video-placeholder">
+              <div class="placeholder-icon">👤</div>
+              <div class="placeholder-text">Your Camera</div>
+            </div>
+          </div>
+          <div class="video-label">You</div>
+        </div>
+        
+        <div class="video-item">
+          <div class="video-wrapper">
+            <video id="remote-video" autoplay playsinline></video>
+            <div id="remote-placeholder" class="video-placeholder">
+              <div class="placeholder-icon">👤</div>
+              <div class="placeholder-text">Waiting for opponent...</div>
+            </div>
+          </div>
+          <div class="video-label">Opponent</div>
+        </div>
+      </div>
+      
+      <div class="video-controls-bottom">
+        <button id="start-video-btn" class="video-control-btn" title="Start Video Chat">📹 Start</button>
+        <button id="toggle-video-btn" class="video-control-btn" title="Toggle Video" style="display:none;">🔴</button>
+        <button id="toggle-audio-btn" class="video-control-btn" title="Toggle Audio" style="display:none;">🔊</button>
+        <button id="leave-video-btn" class="video-control-btn danger" title="Leave Video Chat" style="display:none;">❌</button>
+      </div>
+      
+      <div id="video-status" class="video-status">Click Start to begin video chat</div>
+    </div>
+  </div>
+
+  <script src="video-chat.js"></script>
+</body>
+</html>
