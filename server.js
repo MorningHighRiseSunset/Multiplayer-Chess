@@ -73,6 +73,7 @@ app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
 app.use('/pieces', express.static(path.join(__dirname, 'pieces')));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
+app.use('/3d-chess-files', express.static(path.join(__dirname, '3d-chess-files')));
 app.use(express.static(__dirname));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/lobby', (req, res) => res.redirect('/'));

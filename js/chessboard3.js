@@ -1855,7 +1855,7 @@
                     var pieceSet = cfg.pieceSet;
                     url = pieceSet.replace("{piece}", name);
                 }
-                var loader = new THREE.JSONLoader();
+                var loader = new THREE.ObjectLoader();
                 if (cfg.hasOwnProperty('localStorage') && cfg.localStorage === false) {
                     window.localStorage.removeItem(url);
                 }
@@ -1866,11 +1866,11 @@
                     GEOMETRIES[name] = result.geometry;
                     GEOMETRIES[name].computeBoundingBox();
                 } else {
-                    loader.load(url, function (geometry) {
-                        GEOMETRIES[name] = geometry;
-                        geometry.computeBoundingBox();
+                    loader.load(url, function (object) {
+                        GEOMETRIES[name] = object.geometry;
+                        GEOMETRIES[name].computeBoundingBox();
                         if (cfg.hasOwnProperty('localStorage') === false || cfg.localStorage !== false) {
-                            window.localStorage.setItem(url, JSON.stringify(geometry.toJSON()));
+                            window.localStorage.setItem(url, JSON.stringify(object.toJSON()));
                         }
                     });
                 }
