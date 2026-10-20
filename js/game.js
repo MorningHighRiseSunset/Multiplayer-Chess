@@ -630,9 +630,15 @@ function init3DBoard() {
   if (board3DInitialized) return;
   
   const boardElem = document.getElementById('chess3d');
-  if (!boardElem) return;
+  if (!boardElem) {
+    console.error('Board element not found');
+    return;
+  }
   
   boardElem.innerHTML = '';
+  
+  // Default to white orientation if myColor is not set yet
+  const orientation = (myColor && myColor === 'white') ? 'white' : 'black';
   
   const config = {
     position: 'start',
@@ -643,7 +649,7 @@ function init3DBoard() {
     zoomControls: true,
     showErrors: 'console',
     backgroundColor: null,
-    orientation: myColor === 'white' ? 'white' : 'black',
+    orientation: orientation,
     onDragStart: function(source, piece, position, orientation) {
       console.log('Drag start - source:', source, 'piece:', piece, 'myTurn:', myTurn, 'gameOver:', gameOver);
       if (gameOver) return false;
@@ -690,23 +696,31 @@ function init3DBoard() {
     }
   };
   
-  chessBoard3 = new ChessBoard3('chess3d', config);
-  board3DInitialized = true;
-  
-  // Use longer timeout to ensure Three.js is fully initialized
-  setTimeout(() => {
-    chessBoard3.resize();
-    if (chessBoard3 && chessBoard3.camera) {
-      chessBoard3.camera.position.set(0, 10, 14);
-      chessBoard3.camera.lookAt(new THREE.Vector3(0, 0, 0));
-    }
-    if (chessBoard3 && chessBoard3.renderer && chessBoard3.renderer.domElement) {
-      chessBoard3.renderer.domElement.addEventListener('click', onBoardClick3D, false);
-    }
-    // Load initial position only after camera is set
-    chessBoard3.position('start', false);
-    console.log('3D board fully initialized');
-  }, 500);
+  try {
+    chessBoard3 = new ChessBoard3('chess3d', config);
+    board3DInitialized = true;
+    console.log('3D board initialized successfully');
+    
+    // Use longer timeout to ensure Three.js is fully initialized
+    setTimeout(() => {
+      if (chessBoard3) {
+        chessBoard3.resize();
+        if (chessBoard3.camera) {
+          chessBoard3.camera.position.set(0, 10, 14);
+          chessBoard3.camera.lookAt(new THREE.Vector3(0, 0, 0));
+        }
+        if (chessBoard3.renderer && chessBoard3.renderer.domElement) {
+          chessBoard3.renderer.domElement.addEventListener('click', onBoardClick3D, false);
+        }
+        // Load initial position only after camera is set
+        chessBoard3.position('start', false);
+        console.log('3D board fully initialized');
+      }
+    }, 500);
+  } catch (error) {
+    console.error('Error initializing 3D board:', error);
+    board3DInitialized = false;
+  }
 }
 
 function onBoardClick3D(event) {
@@ -803,8 +817,18 @@ function renderBoard() {
   }
   
   if (chessBoard3 && gameState && gameState.board) {
-    const fen = boardToFEN(gameState.board);
-    chessBoard3.position(fen, false);
+    try {
+      const fen = boardToFEN(gameState.board);
+      chessBoard3.position(fen, false);
+      
+      // Update orientation if myColor has changed
+      if (myColor && chessBoard3) {
+        const newOrientation = myColor === 'white' ? 'white' : 'black';
+        chessBoard3.orientation(newOrientation);
+      }
+    } catch (error) {
+      console.error('Error rendering board:', error);
+    }
   } else if (!gameState || !gameState.board) {
     // No game state yet - show waiting message
     const boardElem = document.getElementById('chess3d');
@@ -885,7 +909,10 @@ function updateFromServer(newState) {
   renderBoard();
   renderMoveHistory();
   checkGameOver();
-  if (!gameOver) statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+  if (!gameOver) {
+    const currentTurnColor = gameState.turn === 'w' ? 'white' : 'black';
+    statusElem.textContent = myTurn ? `Your turn (${myColor})` : `Opponent's turn (${currentTurnColor})`;
+  }
 }
 
 function checkGameOver() {
@@ -951,7 +978,8 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   // Set myTurn based on actual game state turn (only if myColor is set)
   if (myColor) {
     myTurn = (gameState.turn === (myColor === "white" ? "w" : "b"));
-    statusElem.textContent = myTurn ? "Your turn (white)" : "Opponent's turn (black)";
+    const currentTurnColor = gameState.turn === 'w' ? 'white' : 'black';
+    statusElem.textContent = myTurn ? `Your turn (${myColor})` : `Opponent's turn (${currentTurnColor})`;
   } else {
     statusElem.textContent = "Waiting for color assignment...";
   }
@@ -970,7 +998,8 @@ socket.on('rematch', (newState) => {
   // preMove = null; // Not used with ChessBoard3
   renderBoard();
   renderMoveHistory();
-  statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+  const currentTurnColor = gameState.turn === 'w' ? 'white' : 'black';
+  statusElem.textContent = myTurn ? `Your turn (${myColor})` : `Opponent's turn (${currentTurnColor})`;
   document.getElementById('rematch-btn').style.display = 'none';
 });
 
@@ -1193,7 +1222,8 @@ socket.on('opponentDisconnected', () => {
 });
 
 socket.on('opponentReconnected', () => {
-  statusElem.textContent = myTurn ? "Your turn" : "Opponent's turn";
+  const currentTurnColor = gameState.turn === 'w' ? 'white' : 'black';
+  statusElem.textContent = myTurn ? `Your turn (${myColor})` : `Opponent's turn (${currentTurnColor})`;
 });
 
 setInterval(() => {
@@ -1201,6 +1231,11 @@ setInterval(() => {
     requestGameState();
   }
 }, 180000); // 180000 ms = 3 minutes
+
+// Initialize 3D board on page load
+setTimeout(() => {
+  init3DBoard();
+}, 500);
 
 // Don't render board immediately - wait for server sync
 // renderBoard();
