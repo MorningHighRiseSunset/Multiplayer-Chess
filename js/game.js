@@ -693,6 +693,7 @@ function init3DBoard() {
   chessBoard3 = new ChessBoard3('chess3d', config);
   board3DInitialized = true;
   
+  // Use longer timeout to ensure Three.js is fully initialized
   setTimeout(() => {
     chessBoard3.resize();
     if (chessBoard3 && chessBoard3.camera) {
@@ -702,7 +703,10 @@ function init3DBoard() {
     if (chessBoard3 && chessBoard3.renderer && chessBoard3.renderer.domElement) {
       chessBoard3.renderer.domElement.addEventListener('click', onBoardClick3D, false);
     }
-  }, 100);
+    // Load initial position only after camera is set
+    chessBoard3.position('start', false);
+    console.log('3D board fully initialized');
+  }, 500);
 }
 
 function onBoardClick3D(event) {
@@ -801,6 +805,12 @@ function renderBoard() {
   if (chessBoard3 && gameState && gameState.board) {
     const fen = boardToFEN(gameState.board);
     chessBoard3.position(fen, false);
+  } else if (!gameState || !gameState.board) {
+    // No game state yet - show waiting message
+    const boardElem = document.getElementById('chess3d');
+    if (boardElem && !boardElem.querySelector('.waiting-message')) {
+      boardElem.innerHTML = '<div class="waiting-message" style="display:flex;align-items:center;justify-content:center;height:100%;color:#ffe082;font-size:24px;">Waiting for opponent to join...</div>';
+    }
   }
 }
 
