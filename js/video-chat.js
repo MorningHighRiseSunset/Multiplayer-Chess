@@ -60,7 +60,7 @@ class VideoChat {
         } catch (error) {
             console.error('Error initializing video chat:', error);
             let errorMessage = 'Could not access camera/microphone.';
-            
+
             if (error.name === 'NotAllowedError') {
                 errorMessage = 'Camera/microphone access denied. Please allow permissions and try again.';
             } else if (error.name === 'NotFoundError') {
@@ -68,9 +68,8 @@ class VideoChat {
             } else if (error.name === 'NotSupportedError') {
                 errorMessage = 'Video chat is not supported in this browser.';
             }
-            
+
             this.showError(errorMessage);
-            this.updateStatus('Error: ' + errorMessage, 'error');
         }
     }
 
@@ -153,7 +152,6 @@ class VideoChat {
         // UI event listeners
         const toggleVideoBtn = document.getElementById('toggleVideo');
         const toggleAudioBtn = document.getElementById('toggleAudio');
-        const leaveVideoBtn = document.getElementById('leaveVideo');
 
         if (toggleVideoBtn) {
             toggleVideoBtn.addEventListener('click', () => this.toggleVideo());
@@ -161,10 +159,6 @@ class VideoChat {
 
         if (toggleAudioBtn) {
             toggleAudioBtn.addEventListener('click', () => this.toggleAudio());
-        }
-
-        if (leaveVideoBtn) {
-            leaveVideoBtn.addEventListener('click', () => this.leave());
         }
     }
 
@@ -454,17 +448,20 @@ class VideoChat {
         errorDiv.textContent = message;
         errorDiv.style.cssText = `
             position: fixed;
-            top: 20px;
-            right: 20px;
+            bottom: 20px;
+            left: 20px;
             background: #ff4444;
             color: white;
-            padding: 10px 15px;
-            border-radius: 5px;
-            z-index: 1000;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 2000;
             font-size: 14px;
+            max-width: 300px;
+            text-align: center;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         `;
         document.body.appendChild(errorDiv);
-        
+
         setTimeout(() => {
             errorDiv.remove();
         }, 5000);

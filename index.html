@@ -22,10 +22,11 @@
 <body>
   <div class="game-container">
     <!-- <p style="text-align: center; color: #666; font-size: 12px; margin-top: 10px;">For any comments/feedback please contact: maurice13stu@gmail.com</p> -->
-    <p style="text-align: center; color: #666; font-size: 12px; margin-top: 10px;">For suggestions or feedback, contact: maurice13stu@gmail.com</p>
+    <p id="contact-text" style="text-align: center; color: #666; font-size: 12px; margin-top: 10px;">For suggestions or feedback, contact: maurice13stu@gmail.com</p>
     <div class="game-header">
       <h1>Multiplayer Chess</h1>
       <div class="game-actions">
+        <button id="video-chat-btn">Video Chat</button>
         <div class="game-url" id="game-url">
           <span id="url-text">Share URL:</span>
           <input type="text" id="url-input" readonly value="">
@@ -33,12 +34,13 @@
         <button id="copy-link-btn" title="Copy Invite Link">Copy Link</button>
         <button id="play-computer-btn">Play Computer</button>
         <button id="print-moves-btn">Print Moves</button>
+        <button id="toggle-2d-3d-btn">2D View</button>
         <a href="." id="new-game-btn">New Game</a>
-        <button id="video-chat-btn">Video Chat</button>
       </div>
     </div>
     <div class="game-main">
       <div id="chess3d"></div>
+      <div id="chess2d" style="display: none;"></div>
       <div class="game-sidebar">
         <div id="game-status"></div>
         <div id="game-controls"></div>
@@ -62,18 +64,17 @@
   <div id="videoChatContainer" class="video-chat-container" style="display: none;">
     <div class="video-chat-header">
       <span>Video Chat</span>
-      <button class="minimize-btn" id="minimizeVideo">−</button>
+      <button id="minimizeVideoBtn" class="minimize-btn">−</button>
     </div>
     <div class="video-content">
+      <div id="remoteVideos" class="remote-videos"></div>
       <div class="local-video-container">
         <video id="localVideo" class="local-video" autoplay muted playsinline></video>
         <div class="local-video-label">You</div>
       </div>
-      <div id="remoteVideos" class="remote-videos"></div>
       <div class="video-controls">
         <button id="toggleVideo" class="video-control-btn" title="Turn off video">🔴</button>
         <button id="toggleAudio" class="video-control-btn" title="Mute">🔇</button>
-        <button id="leaveVideo" class="video-control-btn danger" title="Leave video chat">❌</button>
       </div>
       <div id="videoStatus" class="video-status">Connecting...</div>
     </div>
@@ -83,6 +84,10 @@
   <div id="promotion-modal" style="display:none"></div>
   <div id="castling-modal" style="display:none"></div>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Chessboard.js for 2D board -->
+  <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
   <!-- Three.js and ChessBoard3 for 3D pieces - using local three.js for JSONLoader compatibility -->
   <script src="3d-chess-files/three.js"></script>
   <script>window.THREE = window.THREE || {}; console.log('THREE loaded:', typeof THREE, THREE ? THREE.REVISION : 'no THREE');</script>

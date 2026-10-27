@@ -19,12 +19,11 @@ body, html {
 
 .game-header {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
   width: 100%;
   max-width: 1200px;
   padding: 0 20px;
-  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -32,6 +31,7 @@ body, html {
   color: #ffe082;
   font-size: 1.8em;
   margin: 0;
+  text-align: center;
 }
 
 .game-url {
@@ -72,9 +72,10 @@ body, html {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
-#copy-link-btn, #new-game-btn, #play-computer-btn, #print-moves-btn, #video-chat-btn {
+#copy-link-btn, #new-game-btn, #play-computer-btn, #print-moves-btn, #video-chat-btn, #toggle-2d-3d-btn {
   padding: 8px 16px;
   border-radius: 8px;
   border: 1.5px solid #ffe082;
@@ -98,7 +99,7 @@ body, html {
   font-size: 1em;
 }
 
-#copy-link-btn:hover, #new-game-btn:hover, #print-moves-btn:hover, #video-chat-btn:hover {
+#copy-link-btn:hover, #new-game-btn:hover, #print-moves-btn:hover, #video-chat-btn:hover, #toggle-2d-3d-btn:hover {
   background: #ffe082;
   color: #232b39;
   border-color: #ffe082;
@@ -169,11 +170,17 @@ body, html {
   width: 900px;
   height: 675px;
   display: block;
-  box-shadow: 0 20px 40px #0008;
   border-radius: 12px;
   overflow: hidden;
-  border: none;
-  background: transparent;
+}
+
+#chess2d {
+  width: 500px;
+  height: 500px;
+  display: none;
+  background: #222;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .square {
@@ -407,8 +414,15 @@ body, html {
   .game-main {
     flex-direction: column;
   }
-  
+
   .game-sidebar {
     max-width: 100%;
+  }
+
+  #chess2d {
+    width: 98vw;
+    height: 98vw;
+    max-width: 400px;
+    max-height: 400px;
   }
 }

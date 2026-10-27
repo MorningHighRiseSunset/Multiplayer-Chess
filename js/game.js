@@ -50,10 +50,15 @@ let animationData = null;
 let myAssignedColor = null;
 let myRole = null;
 let boardElem = document.getElementById('chess3d');
+let board2DElem = document.getElementById('chess2d');
 if (!boardElem) {
   boardElem = document.querySelector('.game-board-container');
 }
 const statusElem = document.getElementById('game-status');
+
+// 2D/3D toggle state
+let is3DView = true;
+let chessBoard2D = null;
 
 // Video chat instance
 let videoChat = null;
@@ -70,6 +75,14 @@ function addResponsiveStyles() {
       max-width: 98vw;
       margin: 0 auto;
       touch-action: manipulation;
+    }
+    #chess2d {
+      width: 500px;
+      height: 500px;
+      max-width: 98vw;
+      margin: 0 auto;
+      touch-action: manipulation;
+      display: none;
     }
     @media (max-width: 950px) {
       #chess3d {
@@ -648,7 +661,7 @@ function init3DBoard() {
     rotateControls: false,
     zoomControls: true,
     showErrors: 'console',
-    backgroundColor: null,
+    backgroundColor: 0x222222,
     orientation: orientation,
     onDragStart: function(source, piece, position, orientation) {
       console.log('Drag start - source:', source, 'piece:', piece, 'myTurn:', myTurn, 'gameOver:', gameOver);
@@ -721,6 +734,121 @@ function init3DBoard() {
     console.error('Error initializing 3D board:', error);
     board3DInitialized = false;
   }
+}
+
+// --- 2D Board Setup using Chessboard.js ---
+function init2DBoard() {
+  if (chessBoard2D) return;
+
+  const board2DElem = document.getElementById('chess2d');
+  if (!board2DElem) {
+    console.error('2D board element not found');
+    return;
+  }
+
+  const orientation = myColor === 'white' ? 'white' : 'black';
+
+  const config = {
+    draggable: true,
+    position: 'start',
+    orientation: orientation,
+    pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+    onDragStart: function(source, piece, position, orientation) {
+      console.log('2D Drag start - source:', source, 'piece:', piece, 'myTurn:', myTurn, 'gameOver:', gameOver);
+      if (gameOver) return false;
+      if (!myTurn) return false;
+      const pieceColor = piece[0];
+      const mySide = myColor === 'white' ? 'w' : 'b';
+      if (pieceColor !== mySide) return false;
+      return true;
+    },
+    onDrop: function(source, target) {
+      console.log('2D Drop - source:', source, 'target:', target);
+      const fromCol = source.charCodeAt(0) - 97;
+      const fromRow = 8 - parseInt(source[1]);
+      const toCol = target.charCodeAt(0) - 97;
+      const toRow = 8 - parseInt(target[1]);
+
+      const piece = gameState.board[fromRow][fromCol];
+      if (!piece) return 'snapback';
+
+      const legalMoves = getLegalMovesForPiece(fromRow, fromCol, gameState.board, gameState.turn, gameState.castling, gameState.enPassant);
+      const isLegal = legalMoves.some(([r, c]) => r === toRow && c === toCol);
+
+      if (!isLegal) return 'snapback';
+
+      const move = {
+        from: [fromRow, fromCol],
+        to: [toRow, toCol],
+        promotion: null
+      };
+
+      moveInProgress = true;
+
+      if (getType(piece) === "P" && (toRow === 0 || toRow === 7)) {
+        showPromotionBox(getColor(piece), (type) => {
+          move.promotion = type;
+          sendMove(move);
+        });
+        return 'snapback';
+      } else {
+        sendMove(move);
+      }
+
+      return 'snapback';
+    }
+  };
+
+  try {
+    chessBoard2D = Chessboard('chess2d', config);
+    console.log('2D board initialized successfully');
+  } catch (error) {
+    console.error('Error initializing 2D board:', error);
+  }
+}
+
+// --- Toggle between 2D and 3D views ---
+function toggle2D3D() {
+  is3DView = !is3DView;
+  const toggleBtn = document.getElementById('toggle-2d-3d-btn');
+  const chess3dDiv = document.getElementById('chess3d');
+  const chess2dDiv = document.getElementById('chess2d');
+
+  if (is3DView) {
+    // Switch to 3D
+    toggleBtn.textContent = '2D View';
+    chess3dDiv.style.display = 'block';
+    chess2dDiv.style.display = 'none';
+
+    // Initialize 3D board if not already done
+    if (!board3DInitialized) {
+      init3DBoard();
+    }
+
+    // Update 3D board with current position
+    if (chessBoard3 && gameState && gameState.board) {
+      const fen = boardToFEN(gameState.board);
+      chessBoard3.position(fen, false);
+    }
+  } else {
+    // Switch to 2D
+    toggleBtn.textContent = '3D View';
+    chess3dDiv.style.display = 'none';
+    chess2dDiv.style.display = 'block';
+
+    // Initialize 2D board if not already done
+    if (!chessBoard2D) {
+      init2DBoard();
+    }
+
+    // Update 2D board with current position
+    if (chessBoard2D && gameState && gameState.board) {
+      const fen = boardToFEN(gameState.board);
+      chessBoard2D.position(fen);
+    }
+  }
+
+  console.log('Switched to', is3DView ? '3D' : '2D', 'view');
 }
 
 function onBoardClick3D(event) {
@@ -812,28 +940,55 @@ function onBoardClick3D(event) {
 }
 
 function renderBoard() {
-  if (!board3DInitialized) {
-    init3DBoard();
-  }
-  
-  if (chessBoard3 && gameState && gameState.board) {
-    try {
-      const fen = boardToFEN(gameState.board);
-      chessBoard3.position(fen, false);
-      
-      // Update orientation if myColor has changed
-      if (myColor && chessBoard3) {
-        const newOrientation = myColor === 'white' ? 'white' : 'black';
-        chessBoard3.orientation(newOrientation);
-      }
-    } catch (error) {
-      console.error('Error rendering board:', error);
+  if (is3DView) {
+    if (!board3DInitialized) {
+      init3DBoard();
     }
-  } else if (!gameState || !gameState.board) {
-    // No game state yet - show waiting message
-    const boardElem = document.getElementById('chess3d');
-    if (boardElem && !boardElem.querySelector('.waiting-message')) {
-      boardElem.innerHTML = '<div class="waiting-message" style="display:flex;align-items:center;justify-content:center;height:100%;color:#ffe082;font-size:24px;">Waiting for opponent to join...</div>';
+
+    if (chessBoard3 && gameState && gameState.board) {
+      try {
+        const fen = boardToFEN(gameState.board);
+        chessBoard3.position(fen, false);
+
+        // Update orientation if myColor has changed
+        if (myColor && chessBoard3) {
+          const newOrientation = myColor === 'white' ? 'white' : 'black';
+          chessBoard3.orientation(newOrientation);
+        }
+      } catch (error) {
+        console.error('Error rendering 3D board:', error);
+      }
+    } else if (!gameState || !gameState.board) {
+      // No game state yet - show waiting message
+      const boardElem = document.getElementById('chess3d');
+      if (boardElem && !boardElem.querySelector('.waiting-message')) {
+        boardElem.innerHTML = '<div class="waiting-message" style="display:flex;align-items:center;justify-content:center;height:100%;color:#ffe082;font-size:24px;">Waiting for opponent to join...</div>';
+      }
+    }
+  } else {
+    if (!chessBoard2D) {
+      init2DBoard();
+    }
+
+    if (chessBoard2D && gameState && gameState.board) {
+      try {
+        const fen = boardToFEN(gameState.board);
+        chessBoard2D.position(fen);
+
+        // Update orientation if myColor has changed
+        if (myColor && chessBoard2D) {
+          const newOrientation = myColor === 'white' ? 'white' : 'black';
+          chessBoard2D.orientation(newOrientation);
+        }
+      } catch (error) {
+        console.error('Error rendering 2D board:', error);
+      }
+    } else if (!gameState || !gameState.board) {
+      // No game state yet - show waiting message
+      const boardElem = document.getElementById('chess2d');
+      if (boardElem && !boardElem.querySelector('.waiting-message')) {
+        boardElem.innerHTML = '<div class="waiting-message" style="display:flex;align-items:center;justify-content:center;height:100%;color:#ffe082;font-size:24px;">Waiting for opponent to join...</div>';
+      }
     }
   }
 }
@@ -983,7 +1138,13 @@ socket.on('startGame', ({ colorAssignments, firstTurn, roles }) => {
   } else {
     statusElem.textContent = "Waiting for color assignment...";
   }
-  
+
+  // Hide contact text when game starts
+  const contactText = document.getElementById('contact-text');
+  if (contactText) {
+    contactText.style.display = 'none';
+  }
+
   renderBoard();
 });
 
@@ -1034,6 +1195,14 @@ if (newGameBtn) {
   };
 }
 
+// --- 2D/3D toggle button ---
+const toggle2D3DBtn = document.getElementById('toggle-2d-3d-btn');
+if (toggle2D3DBtn) {
+  toggle2D3DBtn.onclick = () => {
+    toggle2D3D();
+  };
+}
+
 // --- Print moves button ---
 const printMovesBtn = document.getElementById('print-moves-btn');
 if (printMovesBtn) {
@@ -1078,14 +1247,13 @@ if (printMovesBtn) {
 // --- Video chat button ---
 const videoChatBtn = document.getElementById('video-chat-btn');
 const videoChatContainer = document.getElementById('videoChatContainer');
-const minimizeVideoBtn = document.getElementById('minimizeVideo');
 
 if (videoChatBtn && videoChatContainer) {
   videoChatBtn.onclick = () => {
     if (videoChatContainer.style.display === 'none') {
       videoChatContainer.style.display = 'block';
-      videoChatBtn.textContent = 'Close';
-      
+      videoChatBtn.textContent = 'Hide';
+
       // Initialize video chat if not already initialized
       if (!videoChat && roomCode) {
         videoChat = new VideoChat(socket, roomCode);
@@ -1093,20 +1261,8 @@ if (videoChatBtn && videoChatContainer) {
     } else {
       videoChatContainer.style.display = 'none';
       videoChatBtn.textContent = 'Video Chat';
-      
-      // Leave video chat if active
-      if (videoChat) {
-        videoChat.leave();
-        videoChat = null;
-      }
+      // Don't leave the video chat room, just hide the UI
     }
-  };
-}
-
-if (minimizeVideoBtn && videoChatContainer) {
-  minimizeVideoBtn.onclick = () => {
-    videoChatContainer.classList.toggle('minimized');
-    minimizeVideoBtn.textContent = videoChatContainer.classList.contains('minimized') ? '+' : '−';
   };
 }
 
@@ -1120,53 +1276,71 @@ if (playComputerBtn) {
 
 // --- Game creation/joining logic ---
 function initGame() {
-  if (!roomCode) {
-    // No room code - create new game as white
-    statusElem.textContent = "Creating game...";
-    socket.emit('createRoom', { playerId }, ({ roomCode: newRoomCode }) => {
-      if (newRoomCode) {
-        // Update URL with room code
-        const newUrl = new URL(window.location);
-        newUrl.searchParams.set('room', newRoomCode);
-        window.history.replaceState({}, '', newUrl);
-        // Update roomCode variable
-        roomCode = newRoomCode;
-        // Update visible URL
-        updateVisibleUrl();
-        // Join the room as white
-        socket.emit('joinRoom', { roomCode: newRoomCode, playerId }, (res) => {
-          if (res && res.error) {
-            statusElem.textContent = res.error;
-          } else {
-            myColor = 'white';
-            statusElem.textContent = "Waiting for opponent (share the link!)";
-            
-            // Load game state if available - this will set myTurn correctly
-            if (res && res.gameState) {
-              updateFromServer(res.gameState);
-            }
-          }
-        });
-      }
-    });
-  } else {
-    // Room code exists - join (will be assigned color by server)
+  // Check if there's a room code in the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const existingRoomCode = urlParams.get('room');
+
+  if (existingRoomCode) {
+    // Join existing room
+    roomCode = existingRoomCode;
     statusElem.textContent = "Joining game...";
-    socket.emit('joinRoom', { roomCode, playerId }, (res) => {
+    socket.emit('joinRoom', { roomCode: existingRoomCode, playerId }, (res) => {
       if (res && res.error) {
         statusElem.textContent = res.error;
-        setTimeout(() => window.location.href = window.location.pathname, 3000);
+        // If joining fails, create a new game instead
+        createNewGame();
       } else {
-        // Don't set color here - wait for startGame event from server
-        statusElem.textContent = "Waiting for game to start...";
-        
-        // Load game state if available - this will set myTurn correctly
+        myColor = res.color || 'black'; // Second player gets black
+        statusElem.textContent = "Joined game!";
+        // Load game state if available
         if (res && res.gameState) {
           updateFromServer(res.gameState);
         }
+        // Update visible URL
+        updateVisibleUrl();
       }
     });
+  } else {
+    // Create new game
+    createNewGame();
   }
+}
+
+function createNewGame() {
+  // Clear room code from URL
+  const newUrl = new URL(window.location);
+  newUrl.searchParams.delete('room');
+  window.history.replaceState({}, '', newUrl);
+  roomCode = null;
+
+  // Create new game as white
+  statusElem.textContent = "Creating game...";
+  socket.emit('createRoom', { playerId }, ({ roomCode: newRoomCode }) => {
+    if (newRoomCode) {
+      // Update URL with room code
+      const urlWithRoom = new URL(window.location);
+      urlWithRoom.searchParams.set('room', newRoomCode);
+      window.history.replaceState({}, '', urlWithRoom);
+      // Update roomCode variable
+      roomCode = newRoomCode;
+      // Update visible URL
+      updateVisibleUrl();
+      // Join the room as white
+      socket.emit('joinRoom', { roomCode: newRoomCode, playerId }, (res) => {
+        if (res && res.error) {
+          statusElem.textContent = res.error;
+        } else {
+          myColor = 'white';
+          statusElem.textContent = "Waiting for opponent (share the link!)";
+
+          // Load game state if available - this will set myTurn correctly
+          if (res && res.gameState) {
+            updateFromServer(res.gameState);
+          }
+        }
+      });
+    }
+  });
 }
 
 // --- Reconnection logic ---
@@ -1190,6 +1364,12 @@ socket.on('connect', () => {
 socket.on('move', (newState) => {
   console.log('Received move from server - newState:', newState);
   updateFromServer(newState);
+
+  // Hide contact text when game is active (moves are being made)
+  const contactText = document.getElementById('contact-text');
+  if (contactText) {
+    contactText.style.display = 'none';
+  }
 });
 
 socket.on('opponentLeft', () => {
@@ -1224,6 +1404,12 @@ socket.on('opponentDisconnected', () => {
 socket.on('opponentReconnected', () => {
   const currentTurnColor = gameState.turn === 'w' ? 'white' : 'black';
   statusElem.textContent = myTurn ? `Your turn (${myColor})` : `Opponent's turn (${currentTurnColor})`;
+
+  // Hide contact text when opponent reconnects (game is active)
+  const contactText = document.getElementById('contact-text');
+  if (contactText) {
+    contactText.style.display = 'none';
+  }
 });
 
 setInterval(() => {
@@ -1270,6 +1456,7 @@ if (chatForm && chatInputEl && chatMessages) {
 }
 
 // --- Video Chat Integration ---
+const minimizeVideoBtn = document.getElementById('minimizeVideoBtn');
 if (minimizeVideoBtn) {
   minimizeVideoBtn.addEventListener('click', () => {
     videoChatContainer.classList.toggle('minimized');
